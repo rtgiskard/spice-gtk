@@ -117,6 +117,7 @@ static void usb_connect_failed(GObject               *object,
                                GError                *error,
                                gpointer               data);
 static gboolean is_gtk_session_property(const gchar *property);
+static gboolean is_session_property(const gchar *property);
 static void del_window(spice_connection *conn, SpiceWindow *win);
 
 /* options */
@@ -425,6 +426,8 @@ static void menu_cb_bool_prop(GtkToggleAction *action, gpointer data)
 
     if (is_gtk_session_property(name)) {
         object = win->conn->gtk_session;
+    } else if (is_session_property(name)) {
+        object = win->conn->session;
     } else {
         object = win->spice;
     }
@@ -442,6 +445,20 @@ static void menu_cb_conn_bool_prop_changed(GObject    *gobject,
 
     toggle = gtk_action_group_get_action(win->ag, property);
     g_object_get(win->conn->gtk_session, property, &state, NULL);
+    gtk_toggle_action_set_active(GTK_TOGGLE_ACTION(toggle), state);
+}
+
+static void menu_cb_session_bool_prop_changed(GObject    *gobject,
+                                              GParamSpec *pspec,
+                                              gpointer    user_data)
+{
+    SpiceWindow *win = user_data;
+    const gchar *property = g_param_spec_get_name(pspec);
+    GtkAction *toggle;
+    gboolean state;
+
+    toggle = gtk_action_group_get_action(win->ag, property);
+    g_object_get(win->conn->session, property, &state, NULL);
     gtk_toggle_action_set_active(GTK_TOGGLE_ACTION(toggle), state);
 }
 
@@ -654,6 +671,8 @@ static void restore_configuration(SpiceWindow *win)
 
         if (is_gtk_session_property(keys[i])) {
             object = win->conn->gtk_session;
+        } else if (is_session_property(keys[i])) {
+            object = win->conn->session;
         } else {
             object = win->spice;
         }
@@ -803,6 +822,10 @@ static const char *spice_gtk_session_properties[] = {
     "sync-modifiers",
 };
 
+static const char *spice_session_properties[] = {
+    "enable-audio",
+};
+
 static const GtkToggleActionEntry tentries[] = {
     {
         .name        = "grab-keyboard",
@@ -835,6 +858,10 @@ static const GtkToggleActionEntry tentries[] = {
     },{
         .name        = "auto-usbredir",
         .label       = "Auto redirect newly plugged in USB devices",
+        .callback    = G_CALLBACK(menu_cb_bool_prop),
+    },{
+        .name        = "enable-audio",
+        .label       = "Enable Playback and Record audio channels",
         .callback    = G_CALLBACK(menu_cb_bool_prop),
     },{
         .name        = "Statusbar",
@@ -938,6 +965,7 @@ static char ui_xml[] =
 "      <menuitem action='sync-modifiers'/>\n"
 "      <menuitem action='auto-clipboard'/>\n"
 "      <menuitem action='auto-usbredir'/>\n"
+"      <menuitem action='enable-audio'/>\n"
 "      <menu action='CompressionMenu'>\n"
 "        <menuitem action='auto-glz'/>\n"
 "        <menuitem action='auto-lz'/>\n"
@@ -979,6 +1007,18 @@ static gboolean is_gtk_session_property(const gchar *property)
 
     for (i = 0; i < G_N_ELEMENTS(spice_gtk_session_properties); i++) {
         if (!strcmp(spice_gtk_session_properties[i], property)) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+static gboolean is_session_property(const gchar *property)
+{
+    int i;
+
+    for (i = 0; i < G_N_ELEMENTS(spice_session_properties); i++) {
+        if (!strcmp(spice_session_properties[i], property)) {
             return TRUE;
         }
     }
@@ -1090,8 +1130,7 @@ static SpiceWindow *create_spice_window(spice_connection *conn, SpiceChannel *ch
     win->ui = gtk_ui_manager_new();
     win->ag = gtk_action_group_new("MenuActions");
     gtk_action_group_add_actions(win->ag, entries, G_N_ELEMENTS(entries), win);
-    gtk_action_group_add_toggle_actions(win->ag, tentries,
-                                        G_N_ELEMENTS(tentries), win);
+    gtk_action_group_add_toggle_actions(win->ag, tentries, G_N_ELEMENTS(tentries), win);
     gtk_action_group_add_radio_actions(win->ag, compression_entries,
                                        G_N_ELEMENTS(compression_entries), -1,
                                        G_CALLBACK(compression_cb), win->display_channel);
@@ -1208,6 +1247,19 @@ static SpiceWindow *create_spice_window(spice_connection *conn, SpiceChannel *ch
                  spice_gtk_session_properties[i]);
         spice_g_signal_connect_object(win->conn->gtk_session, notify,
                                       G_CALLBACK(menu_cb_conn_bool_prop_changed),
+                                      win, 0);
+    }
+
+    for (i = 0; i < G_N_ELEMENTS(spice_session_properties); i++) {
+        char notify[64];
+
+        toggle = gtk_action_group_get_action(win->ag, spice_session_properties[i]);
+        g_object_get(win->conn->session, spice_session_properties[i], &state, NULL);
+        gtk_toggle_action_set_active(GTK_TOGGLE_ACTION(toggle), state);
+
+        snprintf(notify, sizeof(notify), "notify::%s", spice_session_properties[i]);
+        spice_g_signal_connect_object(win->conn->session, notify,
+                                      G_CALLBACK(menu_cb_session_bool_prop_changed),
                                       win, 0);
     }
 
