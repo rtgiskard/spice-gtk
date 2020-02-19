@@ -140,11 +140,17 @@ static void spice_audio_init(SpiceAudio *self)
 
 static void connect_channel(SpiceAudio *self, SpiceChannel *channel)
 {
-    if (channel->priv->state != SPICE_CHANNEL_STATE_UNCONNECTED)
+    if (!SPICE_IS_PLAYBACK_CHANNEL(channel) && !SPICE_IS_RECORD_CHANNEL(channel)) {
         return;
+    }
 
-    if (SPICE_AUDIO_GET_CLASS(self)->connect_channel(self, channel))
+    if (channel->priv->state != SPICE_CHANNEL_STATE_UNCONNECTED) {
+        return;
+    }
+
+    if (SPICE_AUDIO_GET_CLASS(self)->connect_channel(self, channel)) {
         spice_channel_connect(channel);
+    }
 }
 
 static void update_audio_channels(SpiceAudio *self, SpiceSession *session)
