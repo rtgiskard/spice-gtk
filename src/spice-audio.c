@@ -153,18 +153,36 @@ static void connect_channel(SpiceAudio *self, SpiceChannel *channel)
     }
 }
 
-static void update_audio_channels(SpiceAudio *self, SpiceSession *session)
-{
-    GList *list, *tmp;
 
-    if (!spice_session_get_audio_enabled(session)) {
-        SPICE_DEBUG("FIXME: disconnect audio channels");
+static void disable_channel(SpiceAudio *self, SpiceChannel *channel)
+{
+    if (!SPICE_IS_PLAYBACK_CHANNEL(channel) && !SPICE_IS_RECORD_CHANNEL(channel)) {
         return;
     }
 
+    if (channel->priv->state == SPICE_CHANNEL_STATE_UNCONNECTED) {
+        return;
+    }
+
+    if (SPICE_AUDIO_GET_CLASS(self)->disable_channel(self, channel)) {
+        spice_channel_disconnect(channel, SPICE_CHANNEL_NONE);
+    }
+}
+
+static void update_audio_channels(SpiceAudio *self, SpiceSession *session)
+{
+    GList *list, *tmp;
+    gboolean audio_enabled = spice_session_get_audio_enabled(session);
+
     list = spice_session_get_channels(session);
     for (tmp = g_list_first(list); tmp != NULL; tmp = g_list_next(tmp)) {
-        connect_channel(self, tmp->data);
+        SpiceChannel *channel = SPICE_CHANNEL(tmp->data);
+
+        if (audio_enabled) {
+            connect_channel(self, channel);
+        } else {
+            disable_channel(self, channel);
+        }
     }
     g_list_free(list);
 }

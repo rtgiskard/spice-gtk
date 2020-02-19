@@ -72,6 +72,7 @@ struct _SpiceAudioClass {
 
     /*< private >*/
     gboolean (*connect_channel)(SpiceAudio *audio, SpiceChannel *channel);
+    gboolean (*disable_channel)(SpiceAudio *audio, SpiceChannel *channel);
     void (*get_playback_volume_info_async)(SpiceAudio *audio,
                                            GCancellable *cancellable,
                                            SpiceMainChannel *main_channel,
@@ -95,7 +96,7 @@ struct _SpiceAudioClass {
                                               guint16 **volume,
                                               GError **error);
 
-    gchar _spice_reserved[SPICE_RESERVED_PADDING - 4 * sizeof(void *)];
+    gchar _spice_reserved[SPICE_RESERVED_PADDING - 5 * sizeof(void *)];
 };
 
 GType spice_audio_get_type(void);
