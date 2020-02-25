@@ -46,6 +46,7 @@ struct _SpiceGstaudioPrivate {
 G_DEFINE_TYPE_WITH_PRIVATE(SpiceGstaudio, spice_gstaudio, SPICE_TYPE_AUDIO)
 
 static gboolean connect_channel(SpiceAudio *audio, SpiceChannel *channel);
+static gboolean disable_channel(SpiceAudio *audio, SpiceChannel *channel);
 static void channel_weak_notified(gpointer data, GObject *where_the_object_was);
 static void spice_gstaudio_get_playback_volume_info_async(SpiceAudio *audio,
         GCancellable *cancellable, SpiceMainChannel *main_channel,
@@ -102,6 +103,7 @@ static void spice_gstaudio_class_init(SpiceGstaudioClass *klass)
     SpiceAudioClass *audio_class = SPICE_AUDIO_CLASS(klass);
 
     audio_class->connect_channel = connect_channel;
+    audio_class->disable_channel = disable_channel;
     audio_class->get_playback_volume_info_async = spice_gstaudio_get_playback_volume_info_async;
     audio_class->get_playback_volume_info_finish = spice_gstaudio_get_playback_volume_info_finish;
     audio_class->get_record_volume_info_async = spice_gstaudio_get_record_volume_info_async;
@@ -541,6 +543,38 @@ static gboolean connect_channel(SpiceAudio *audio, SpiceChannel *channel)
                                       G_CALLBACK(record_volume_changed), gstaudio, 0);
         spice_g_signal_connect_object(channel, "notify::mute",
                                       G_CALLBACK(record_mute_changed), gstaudio, 0);
+
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+static gboolean disable_channel(SpiceAudio *audio, SpiceChannel *channel)
+{
+    SpiceGstaudio *gstaudio = SPICE_GSTAUDIO(audio);
+    SpiceGstaudioPrivate *p = gstaudio->priv;
+
+    if (SPICE_IS_PLAYBACK_CHANNEL(channel)) {
+        g_return_val_if_fail(p->pchannel == channel, FALSE);
+
+        playback_stop(gstaudio);
+        stream_dispose(&p->playback);
+        g_object_weak_unref(G_OBJECT(p->pchannel), channel_weak_notified, audio);
+        g_signal_handlers_disconnect_by_data(channel, gstaudio);
+        p->pchannel = NULL;
+
+        return TRUE;
+    }
+
+    if (SPICE_IS_RECORD_CHANNEL(channel)) {
+        g_return_val_if_fail(p->rchannel == channel, FALSE);
+
+        record_stop(gstaudio);
+        stream_dispose(&p->record);
+        g_object_weak_unref(G_OBJECT(p->rchannel), channel_weak_notified, audio);
+        g_signal_handlers_disconnect_by_data(channel, gstaudio);
+        p->rchannel = NULL;
 
         return TRUE;
     }
