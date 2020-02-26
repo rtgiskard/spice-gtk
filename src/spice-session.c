@@ -231,6 +231,7 @@ G_STATIC_ASSERT(G_N_ELEMENTS(_spice_image_compress_values) == SPICE_IMAGE_COMPRE
 
 static const gchar* spice_session_get_shared_dir(SpiceSession *session);
 static void spice_session_set_shared_dir(SpiceSession *session, const gchar *dir);
+static void spice_session_set_audio_enabled(SpiceSession *session, gboolean new_state);
 
 GType
 spice_image_compress_get_type (void)
@@ -822,7 +823,7 @@ static void spice_session_set_property(GObject      *gobject,
         spice_info("SpiceSession::color-depth has been deprecated. Property is ignored");
         break;
     case PROP_AUDIO:
-        s->audio = g_value_get_boolean(value);
+        spice_session_set_audio_enabled(session, g_value_get_boolean(value));
         break;
     case PROP_READ_ONLY:
         s->read_only = g_value_get_boolean(value);
@@ -2770,6 +2771,18 @@ SpiceUsbDeviceManager *spice_usb_device_manager_get(SpiceSession *session,
     g_mutex_unlock(&mutex);
 
     return self;
+}
+
+static void spice_session_set_audio_enabled(SpiceSession *session, gboolean new_state)
+{
+    g_return_if_fail(SPICE_IS_SESSION(session));
+
+    SpiceSessionPrivate *s = session->priv;
+
+    if (s->audio != new_state) {
+        s->audio = new_state;
+        g_coroutine_object_notify(G_OBJECT(session), "enable-audio");
+    }
 }
 
 G_GNUC_INTERNAL
