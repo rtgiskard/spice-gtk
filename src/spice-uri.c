@@ -33,8 +33,10 @@
  *
  * A SpiceURI represents a (parsed) URI.
  * Since: 0.24
+ * Deprecated: 0.40: Use GLib #GUri instead.
  */
 
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 struct _SpiceURI {
     GObject parent_instance;
     gchar *scheme;
@@ -224,6 +226,7 @@ end:
  *
  * Returns: @uri's scheme.
  * Since: 0.24
+ * Deprecated: 0.40
  **/
 const gchar* spice_uri_get_scheme(SpiceURI *self)
 {
@@ -238,6 +241,7 @@ const gchar* spice_uri_get_scheme(SpiceURI *self)
  *
  * Sets @uri's scheme to @scheme.
  * Since: 0.24
+ * Deprecated: 0.40
  **/
 void spice_uri_set_scheme(SpiceURI *self, const gchar *scheme)
 {
@@ -256,6 +260,7 @@ void spice_uri_set_scheme(SpiceURI *self, const gchar *scheme)
  *
  * Returns: @uri's hostname.
  * Since: 0.24
+ * Deprecated: 0.40
  **/
 const gchar* spice_uri_get_hostname(SpiceURI *self)
 {
@@ -271,6 +276,7 @@ const gchar* spice_uri_get_hostname(SpiceURI *self)
  *
  * Sets @uri's hostname to @hostname.
  * Since: 0.24
+ * Deprecated: 0.40
  **/
 void spice_uri_set_hostname(SpiceURI *self, const gchar *hostname)
 {
@@ -289,6 +295,7 @@ void spice_uri_set_hostname(SpiceURI *self, const gchar *hostname)
  *
  * Returns: @uri's port.
  * Since: 0.24
+ * Deprecated: 0.40
  **/
 guint spice_uri_get_port(SpiceURI *self)
 {
@@ -303,6 +310,7 @@ guint spice_uri_get_port(SpiceURI *self)
  *
  * Sets @uri's port to @port.
  * Since: 0.24
+ * Deprecated: 0.40
  **/
 void spice_uri_set_port(SpiceURI *self, guint port)
 {
@@ -398,7 +406,8 @@ static void spice_uri_class_init(SpiceURIClass *klass)
                                                          "scheme",
                                                          NULL,
                                                          G_PARAM_STATIC_STRINGS |
-                                                         G_PARAM_READWRITE));
+                                                         G_PARAM_READWRITE |
+                                                         G_PARAM_DEPRECATED));
 
     g_object_class_install_property(G_OBJECT_CLASS (klass),
                                     SPICE_URI_HOSTNAME,
@@ -407,7 +416,8 @@ static void spice_uri_class_init(SpiceURIClass *klass)
                                                          "hostname",
                                                          NULL,
                                                          G_PARAM_STATIC_STRINGS |
-                                                         G_PARAM_READWRITE));
+                                                         G_PARAM_READWRITE |
+                                                         G_PARAM_DEPRECATED));
 
     g_object_class_install_property(G_OBJECT_CLASS (klass),
                                     SPICE_URI_PORT,
@@ -416,7 +426,8 @@ static void spice_uri_class_init(SpiceURIClass *klass)
                                                        "port",
                                                        0, G_MAXUINT, 0,
                                                        G_PARAM_STATIC_STRINGS |
-                                                       G_PARAM_READWRITE));
+                                                       G_PARAM_READWRITE |
+                                                       G_PARAM_DEPRECATED));
 
     g_object_class_install_property(G_OBJECT_CLASS (klass),
                                     SPICE_URI_USER,
@@ -425,7 +436,8 @@ static void spice_uri_class_init(SpiceURIClass *klass)
                                                          "user",
                                                          NULL,
                                                          G_PARAM_STATIC_STRINGS |
-                                                         G_PARAM_READWRITE));
+                                                         G_PARAM_READWRITE |
+                                                         G_PARAM_DEPRECATED));
 
     g_object_class_install_property(G_OBJECT_CLASS (klass),
                                     SPICE_URI_PASSWORD,
@@ -434,7 +446,8 @@ static void spice_uri_class_init(SpiceURIClass *klass)
                                                          "password",
                                                          NULL,
                                                          G_PARAM_STATIC_STRINGS |
-                                                         G_PARAM_READWRITE));
+                                                         G_PARAM_READWRITE |
+                                                         G_PARAM_DEPRECATED));
 }
 
 /**
@@ -445,6 +458,7 @@ static void spice_uri_class_init(SpiceURIClass *klass)
  *
  * Returns: a string representing @uri, which the caller must free.
  * Since: 0.24
+ * Deprecated: 0.40
  **/
 gchar* spice_uri_to_string(SpiceURI* self)
 {
@@ -471,6 +485,7 @@ gchar* spice_uri_to_string(SpiceURI* self)
  *
  * Returns: @uri's user.
  * Since: 0.24
+ * Deprecated: 0.40
  **/
 const gchar* spice_uri_get_user(SpiceURI *self)
 {
@@ -485,6 +500,7 @@ const gchar* spice_uri_get_user(SpiceURI *self)
  *
  * Sets @uri's user to @user.
  * Since: 0.24
+ * Deprecated: 0.40
  **/
 void spice_uri_set_user(SpiceURI *self, const gchar *user)
 {
@@ -503,6 +519,7 @@ void spice_uri_set_user(SpiceURI *self, const gchar *user)
  *
  * Returns: @uri's password.
  * Since: 0.24
+ * Deprecated: 0.40
  **/
 const gchar* spice_uri_get_password(SpiceURI *self)
 {
@@ -517,6 +534,7 @@ const gchar* spice_uri_get_password(SpiceURI *self)
  *
  * Sets @uri's password to @password.
  * Since: 0.24
+ * Deprecated: 0.40
  **/
 void spice_uri_set_password(SpiceURI *self, const gchar *password)
 {
@@ -526,3 +544,4 @@ void spice_uri_set_password(SpiceURI *self, const gchar *password)
     self->password = g_strdup(password);
     g_object_notify((GObject *)self, "password");
 }
+G_GNUC_END_IGNORE_DEPRECATIONS

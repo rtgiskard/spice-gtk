@@ -19,6 +19,8 @@
 #include <spice-client.h>
 #include "spice-uri-priv.h"
 
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+
 struct test_case {
     gchar *uri;
     gchar *scheme;
@@ -129,6 +131,8 @@ static void test_spice_uri_ipv6_good(void)
 
     test_spice_uri_good(valid_test_cases, G_N_ELEMENTS(valid_test_cases));
 }
+
+G_GNUC_END_IGNORE_DEPRECATIONS
 
 int main(int argc, char* argv[])
 {

@@ -24,6 +24,7 @@
 #include <glib-object.h>
 
 G_BEGIN_DECLS
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 
 #define SPICE_TYPE_URI (spice_uri_get_type ())
 #define SPICE_URI(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), SPICE_TYPE_URI, SpiceURI))
@@ -36,8 +37,10 @@ G_BEGIN_DECLS
  * SpiceURI:
  *
  * The #SpiceURI struct is opaque and cannot be accessed directly.
+ *
+ * Deprecated: 0.40: Use GLib #GUri instead.
  */
-typedef struct _SpiceURI SpiceURI;
+typedef struct _SpiceURI SpiceURI G_DEPRECATED_FOR(GUri);
 
 /**
  * SpiceURIClass:
@@ -45,23 +48,36 @@ typedef struct _SpiceURI SpiceURI;
  * The #SpiceURIClass struct is opaque and cannot be accessed directly.
  * It is class structure for #SpiceURI.
  */
-typedef struct _SpiceURIClass SpiceURIClass;
-typedef struct _SpiceURIPrivate SpiceURIPrivate;
+typedef struct _SpiceURIClass SpiceURIClass G_DEPRECATED;
+typedef struct _SpiceURIPrivate SpiceURIPrivate G_DEPRECATED;
 
+G_DEPRECATED
 GType spice_uri_get_type(void) G_GNUC_CONST;
 
+G_DEPRECATED
 const gchar* spice_uri_get_scheme(SpiceURI* uri);
+G_DEPRECATED
 void spice_uri_set_scheme(SpiceURI* uri, const gchar* scheme);
+G_DEPRECATED
 const gchar* spice_uri_get_hostname(SpiceURI* uri);
+G_DEPRECATED
 void spice_uri_set_hostname(SpiceURI* uri, const gchar* hostname);
+G_DEPRECATED
 guint spice_uri_get_port(SpiceURI* uri);
+G_DEPRECATED
 void spice_uri_set_port(SpiceURI* uri, guint port);
+G_DEPRECATED
 gchar *spice_uri_to_string(SpiceURI* uri);
+G_DEPRECATED
 const gchar* spice_uri_get_user(SpiceURI* uri);
+G_DEPRECATED
 void spice_uri_set_user(SpiceURI* uri, const gchar* user);
+G_DEPRECATED
 const gchar* spice_uri_get_password(SpiceURI* uri);
+G_DEPRECATED
 void spice_uri_set_password(SpiceURI* uri, const gchar* password);
 
+G_GNUC_END_IGNORE_DEPRECATIONS
 G_END_DECLS
 
 #endif /* __SPICE_URI_H__ */
