@@ -92,6 +92,7 @@ endforeach
 # check for mandatory dependencies
 #
 glib_version = '2.52'
+glib_max_version = '2.66'
 glib_version_info = '>= @0@'.format(glib_version)
 pixman_version = '>= 0.17.7'
 
@@ -382,8 +383,9 @@ summary_info += {'valgrind': get_option('valgrind')}
 # global C defines
 #
 glib_encoded_version = 'GLIB_VERSION_@0@'.format(glib_version.underscorify())
+glib_encoded_max_version = 'GLIB_VERSION_@0@'.format(glib_max_version.underscorify())
 spice_gtk_global_cflags += ['-DGLIB_VERSION_MIN_REQUIRED=@0@'.format(glib_encoded_version),
-                            '-DGLIB_VERSION_MAX_ALLOWED=@0@'.format(glib_encoded_version)]
+                            '-DGLIB_VERSION_MAX_ALLOWED=@0@'.format(glib_encoded_max_version)]
 
 if spice_gtk_has_gtk
   gtk_encoded_version='GDK_VERSION_@0@'.format(gtk_version_required.underscorify())
