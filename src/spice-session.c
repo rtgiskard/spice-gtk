@@ -61,7 +61,6 @@ struct _SpiceSessionPrivate {
     char              *cert_subject;
     guint             verify;
     gboolean          read_only;
-    SpiceURI          *proxy;
     gchar             *shared_dir;
     gboolean          share_dir_ro;
 
@@ -126,6 +125,10 @@ struct _SpiceSessionPrivate {
     SpiceUsbDeviceManager *usb_manager;
     SpicePlaybackChannel *playback_channel;
     PhodavServer      *webdav;
+
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+    SpiceURI          *spice_proxy;
+G_GNUC_END_IGNORE_DEPRECATIONS
 };
 
 
@@ -255,29 +258,31 @@ static void spice_session_channel_destroy(SpiceSession *session, SpiceChannel *c
 
 static void update_proxy(SpiceSession *self, const gchar *str)
 {
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
     SpiceSessionPrivate *s = self->priv;
-    SpiceURI *proxy = NULL;
+    SpiceURI *spice_proxy = NULL;
     GError *error = NULL;
 
     if (str == NULL)
         str = g_getenv("SPICE_PROXY");
     if (str == NULL || *str == 0) {
-        g_clear_object(&s->proxy);
+        g_clear_object(&s->spice_proxy);
         return;
     }
 
-    proxy = spice_uri_new();
-    if (!spice_uri_parse(proxy, str, &error))
-        g_clear_object(&proxy);
+    spice_proxy = spice_uri_new();
+    if (!spice_uri_parse(spice_proxy, str, &error))
+        g_clear_object(&spice_proxy);
     if (error) {
         g_warning("%s", error->message);
         g_clear_error(&error);
     }
 
-    if (proxy != NULL) {
-        g_clear_object(&s->proxy);
-        s->proxy = proxy;
+    if (spice_proxy != NULL) {
+        g_clear_object(&s->spice_proxy);
+        s->spice_proxy = spice_proxy;
     }
+G_GNUC_END_IGNORE_DEPRECATIONS
 }
 
 static void spice_session_init(SpiceSession *session)
@@ -342,7 +347,7 @@ spice_session_dispose(GObject *gobject)
 
     g_clear_object(&s->audio_manager);
     g_clear_object(&s->usb_manager);
-    g_clear_object(&s->proxy);
+    g_clear_object(&s->spice_proxy);
     g_clear_object(&s->webdav);
 
     /* Chain up to the parent class */
@@ -700,7 +705,9 @@ static void spice_session_get_property(GObject    *gobject,
         g_value_set_pointer(value, s->uuid);
 	break;
     case PROP_PROXY:
-        g_value_take_string(value, spice_uri_to_string(s->proxy));
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+        g_value_take_string(value, spice_uri_to_string(s->spice_proxy));
+G_GNUC_END_IGNORE_DEPRECATIONS
 	break;
     case PROP_SHARED_DIR:
         g_value_set_string(value, spice_session_get_shared_dir(session));
@@ -1603,7 +1610,7 @@ SpiceSession *spice_session_new_from_session(SpiceSession *session)
                                       "ca-file", NULL,
                                       NULL));
     c = copy->priv;
-    g_clear_object(&c->proxy);
+    g_clear_object(&c->spice_proxy);
 
     g_warn_if_fail(c->host == NULL);
     g_warn_if_fail(c->unix_path == NULL);
@@ -1615,7 +1622,7 @@ SpiceSession *spice_session_new_from_session(SpiceSession *session)
     g_warn_if_fail(c->cert_subject == NULL);
     g_warn_if_fail(c->pubkey == NULL);
     g_warn_if_fail(c->pubkey == NULL);
-    g_warn_if_fail(c->proxy == NULL);
+    g_warn_if_fail(c->spice_proxy == NULL);
 
     g_object_get(session,
                  "host", &c->host,
@@ -1639,8 +1646,8 @@ SpiceSession *spice_session_new_from_session(SpiceSession *session)
     c->client_provided_sockets = s->client_provided_sockets;
     c->protocol = s->protocol;
     c->connection_id = s->connection_id;
-    if (s->proxy)
-        c->proxy = g_object_ref(s->proxy);
+    if (s->spice_proxy)
+        c->spice_proxy = g_object_ref(s->spice_proxy);
 
     return copy;
 }
@@ -2086,12 +2093,14 @@ struct spice_open_host {
     struct coroutine *from;
     SpiceSession *session;
     SpiceChannel *channel;
-    SpiceURI *proxy;
     int port;
     GCancellable *cancellable;
     GError *error;
     GSocketConnection *connection;
     GSocketClient *client;
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+    SpiceURI *spice_proxy;
+G_GNUC_END_IGNORE_DEPRECATIONS
 };
 
 static void socket_client_connect_ready(GObject *source_object, GAsyncResult *result,
@@ -2144,12 +2153,14 @@ static void proxy_lookup_ready(GObject *source_object, GAsyncResult *result,
     }
 
     for (it = addresses; it != NULL; it = it->next) {
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
         address = g_proxy_address_new(G_INET_ADDRESS(it->data),
-                                      spice_uri_get_port(open_host->proxy),
-                                      spice_uri_get_scheme(open_host->proxy),
+                                      spice_uri_get_port(open_host->spice_proxy),
+                                      spice_uri_get_scheme(open_host->spice_proxy),
                                       s->host, open_host->port,
-                                      spice_uri_get_user(open_host->proxy),
-                                      spice_uri_get_password(open_host->proxy));
+                                      spice_uri_get_user(open_host->spice_proxy),
+                                      spice_uri_get_password(open_host->spice_proxy));
+G_GNUC_END_IGNORE_DEPRECATIONS
         if (address != NULL)
             break;
     }
@@ -2172,17 +2183,19 @@ static gboolean open_host_idle_cb(gpointer data)
         return FALSE;
 
     s = open_host->session->priv;
-    open_host->proxy = s->proxy;
+    open_host->spice_proxy = s->spice_proxy;
     if (open_host->error != NULL) {
         coroutine_yieldto(open_host->from, NULL);
         return FALSE;
     }
 
-    if (open_host->proxy) {
+    if (open_host->spice_proxy) {
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
         g_resolver_lookup_by_name_async(g_resolver_get_default(),
-                                        spice_uri_get_hostname(open_host->proxy),
+                                        spice_uri_get_hostname(open_host->spice_proxy),
                                         open_host->cancellable,
                                         proxy_lookup_ready, open_host);
+G_GNUC_END_IGNORE_DEPRECATIONS
     } else {
         GSocketConnectable *address = NULL;
 
@@ -2208,11 +2221,13 @@ static gboolean open_host_idle_cb(gpointer data)
         g_object_unref(address);
     }
 
-    if (open_host->proxy != NULL) {
-        gchar *str = spice_uri_to_string(open_host->proxy);
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+    if (open_host->spice_proxy != NULL) {
+        gchar *str = spice_uri_to_string(open_host->spice_proxy);
         SPICE_DEBUG("(with proxy %s)", str);
         g_free(str);
     }
+G_GNUC_END_IGNORE_DEPRECATIONS
 
     return FALSE;
 }
@@ -2268,7 +2283,7 @@ GSocketConnection* spice_session_channel_open_host(SpiceSession *session, SpiceC
     }
 
     open_host.client = g_socket_client_new();
-    g_socket_client_set_enable_proxy(open_host.client, s->proxy != NULL);
+    g_socket_client_set_enable_proxy(open_host.client, s->spice_proxy != NULL);
     g_socket_client_set_timeout(open_host.client, SOCKET_TIMEOUT);
 
     g_idle_add(open_host_idle_cb, &open_host);
@@ -2729,7 +2744,9 @@ const gchar* spice_audio_data_mode_to_string(gint mode)
  *
  * Returns: (transfer none): the session proxy #SpiceURI or %NULL.
  * Since: 0.24
+ * Deprecated: 0.40: use SpiceSession:proxy instead
  **/
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 SpiceURI *spice_session_get_proxy_uri(SpiceSession *session)
 {
     SpiceSessionPrivate *s;
@@ -2739,8 +2756,9 @@ SpiceURI *spice_session_get_proxy_uri(SpiceSession *session)
 
     s = session->priv;
 
-    return s->proxy;
+    return s->spice_proxy;
 }
+G_GNUC_END_IGNORE_DEPRECATIONS
 
 /**
  * spice_audio_get:
