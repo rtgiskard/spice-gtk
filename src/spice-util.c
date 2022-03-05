@@ -493,13 +493,13 @@ static GMainContext *spice_context = NULL;
  **/
 void spice_util_set_main_context(GMainContext *context)
 {
+    if (context) {
+        g_main_context_ref(context);
+    }
     if (spice_context) {
         g_main_context_unref(spice_context);
     }
     spice_context = context;
-    if (spice_context) {
-        g_main_context_ref(spice_context);
-    }
 }
 
 /**
@@ -565,8 +565,9 @@ g_spice_timeout_add_full (gint priority,
     context = spice_main_context();
     source = g_timeout_source_new(interval);
 
-    if (priority != G_PRIORITY_DEFAULT)
+    if (priority != G_PRIORITY_DEFAULT) {
         g_source_set_priority(source, priority);
+    }
 
     g_source_set_callback(source, function, data, notify);
     id = g_source_attach(source, context);
@@ -628,10 +629,11 @@ g_spice_source_remove(guint tag)
     g_return_val_if_fail(tag > 0, FALSE);
 
     source = g_main_context_find_source_by_id(spice_main_context(), tag);
-    if (source)
+    if (source) {
         g_source_destroy(source);
-    else
+    } else {
         g_critical("Source ID %u was not found when attempting to remove it", tag);
+    }
 
     return source != NULL;
 }
