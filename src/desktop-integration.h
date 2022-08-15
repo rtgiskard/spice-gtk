@@ -57,4 +57,12 @@ SpiceDesktopIntegration *spice_desktop_integration_get(SpiceSession *session);
 void spice_desktop_integration_inhibit_automount(SpiceDesktopIntegration *self);
 void spice_desktop_integration_uninhibit_automount(SpiceDesktopIntegration *self);
 
+/* Disables client's screen-reader on keyboard's grab. This help's the user to use
+ * custom at-spi2 key bindings related to a11y in the Guest without being taken
+ * by the client's screen-reader.
+ *
+ * Note that the toggle only enables screen-reader if it was enabled before.
+ */
+void spice_desktop_integration_toggle_client_screen_reader(SpiceDesktopIntegration *self,
+                                                           gboolean keyboard_grab);
 G_END_DECLS

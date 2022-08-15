@@ -1769,9 +1769,13 @@ G_GNUC_INTERNAL
 void spice_gtk_session_set_keyboard_has_focus(SpiceGtkSession *self,
                                                 gboolean keyboard_has_focus)
 {
+    SpiceDesktopIntegration *desktop_int;
     g_return_if_fail(SPICE_IS_GTK_SESSION(self));
 
     self->priv->keyboard_has_focus = keyboard_has_focus;
+    desktop_int = spice_desktop_integration_get(self->priv->session);
+    spice_desktop_integration_toggle_client_screen_reader(desktop_int,
+                                                          keyboard_has_focus);
 }
 
 G_GNUC_INTERNAL
