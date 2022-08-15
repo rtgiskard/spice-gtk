@@ -93,6 +93,9 @@ struct _SpiceSessionPrivate {
        temporarily released (because it is going to invoke policykit) */
     gboolean          inhibit_keyboard_grab;
 
+    /* whether to enable a11y screen-reader toogle */
+    gboolean          a11y_screen_reader;
+
     GStrv             disable_effects;
     GStrv             secure_channels;
 
@@ -203,6 +206,7 @@ enum {
     PROP_UNIX_PATH,
     PROP_PREF_COMPRESSION,
     PROP_GL_SCANOUT,
+    PROP_A11Y_SCREEN_READER,
 };
 
 /* signals */
@@ -717,6 +721,9 @@ static void spice_session_get_property(GObject    *gobject,
     case PROP_GL_SCANOUT:
         g_value_set_boolean(value, s->gl_scanout);
         break;
+    case PROP_A11Y_SCREEN_READER:
+        g_value_set_boolean(value, s->a11y_screen_reader);
+        break;
     default:
 	G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
 	break;
@@ -862,6 +869,9 @@ static void spice_session_set_property(GObject      *gobject,
 #else
         g_warning("SpiceSession:gl-scanout is only available on Unix");
 #endif
+        break;
+    case PROP_A11Y_SCREEN_READER:
+        s->a11y_screen_reader = g_value_get_boolean(value);
         break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
@@ -1549,6 +1559,25 @@ static void spice_session_class_init(SpiceSessionClass *klass)
 #else
                               false,
 #endif
+                              G_PARAM_READWRITE |
+                              G_PARAM_STATIC_STRINGS));
+
+    /**
+     * SpiceSession:a11y-screen-reader:
+     *
+     * Toggle client's screen-reader on/off when spice-gtk grab and ungrab the
+     * keyboard respectively. At the moment, this is Unix specific option and
+     * works only with Desktop Enviroment's that respects GNOME's gsettings
+     * accessibility schema.
+     *
+     * Since: 0.42
+     **/
+    g_object_class_install_property
+        (gobject_class, PROP_A11Y_SCREEN_READER,
+         g_param_spec_boolean("a11y-screen-reader",
+                              "a11y-screen-reader",
+                              "Enable toggle of client's a11y screen reader",
+                              TRUE,
                               G_PARAM_READWRITE |
                               G_PARAM_STATIC_STRINGS));
 }

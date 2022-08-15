@@ -34,6 +34,7 @@ static char *usbredir_redirect_on_connect = NULL;
 static gboolean smartcard = FALSE;
 static gboolean disable_audio = FALSE;
 static gboolean disable_usbredir = FALSE;
+static gboolean disable_screen_reader_toggle = FALSE;
 static gint cache_size = 0;
 static gint glz_window_size = 0;
 static gchar *secure_channels = NULL;
@@ -199,6 +200,8 @@ GOptionGroup* spice_get_option_group(void)
           "<auto-glz,auto-lz,quic,glz,lz,off>" },
 #endif
 
+        { "spice-disable-screen-reader-toggle", '\0', 0, G_OPTION_ARG_NONE, &disable_screen_reader_toggle,
+          N_("Disable toggle of client's screen-reader on keybard grab"), NULL },
         { "spice-debug", '\0', G_OPTION_FLAG_NO_ARG, G_OPTION_ARG_CALLBACK, option_debug,
           N_("Enable Spice-GTK debugging"), NULL },
         { "spice-gtk-version", '\0', G_OPTION_FLAG_NO_ARG, G_OPTION_ARG_CALLBACK, option_version,
@@ -327,4 +330,6 @@ void spice_set_session_option(SpiceSession *session)
         g_object_set(session, "shared-dir", shared_dir, NULL);
     if (preferred_compression != SPICE_IMAGE_COMPRESSION_INVALID)
         g_object_set(session, "preferred-compression", preferred_compression, NULL);
+    if (disable_screen_reader_toggle)
+        g_object_set(session, "a11y-screen-reader", FALSE, NULL);
 }
