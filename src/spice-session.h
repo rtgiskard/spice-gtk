@@ -113,8 +113,12 @@ void spice_session_disconnect(SpiceSession *session);
 GList *spice_session_get_channels(SpiceSession *session);
 gboolean spice_session_has_channel_type(SpiceSession *session, gint type);
 gboolean spice_session_get_read_only(SpiceSession *session);
-SpiceURI *spice_session_get_proxy_uri(SpiceSession *session);
 gboolean spice_session_is_for_migration(SpiceSession *session);
+
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+G_DEPRECATED_FOR(SpiceSession::proxy property)
+SpiceURI *spice_session_get_proxy_uri(SpiceSession *session);
+G_GNUC_END_IGNORE_DEPRECATIONS
 
 G_END_DECLS
 

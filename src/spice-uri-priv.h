@@ -19,8 +19,10 @@
 #include "spice-uri.h"
 
 G_BEGIN_DECLS
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 
 SpiceURI* spice_uri_new(void);
 gboolean spice_uri_parse(SpiceURI* self, const gchar* uri, GError** error);
 
+G_GNUC_END_IGNORE_DEPRECATIONS
 G_END_DECLS
