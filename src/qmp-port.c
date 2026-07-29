@@ -120,7 +120,7 @@ spice_qmp_dispatch_message(SpiceQmpPort *self)
         SPICE_DEBUG("QMP return id:%d", id);
         if (!self->priv->ready && id == 0) {
             self->priv->ready = TRUE;
-            g_object_notify(G_OBJECT(self), "ready");
+            g_object_notify_by_pspec (G_OBJECT(self), props[PROP_READY]);
         }
 
         g_warn_if_fail(self->priv->ready);
