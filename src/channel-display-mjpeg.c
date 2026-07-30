@@ -79,7 +79,7 @@ static void mjpeg_src_term(struct jpeg_decompress_struct *cinfo)
 static void mjpeg_decoder_schedule(MJpegDecoder *decoder);
 
 /* main context */
-static gboolean mjpeg_decoder_decode_frame(gpointer video_decoder)
+static void mjpeg_decoder_decode_frame(gpointer video_decoder)
 {
     MJpegDecoder *decoder = (MJpegDecoder*)video_decoder;
     JDIMENSION width, height;
@@ -121,7 +121,7 @@ static gboolean mjpeg_decoder_decode_frame(gpointer video_decoder)
      */
     if (decoder->mjpeg_cinfo.rec_outbuf_height > G_N_ELEMENTS(lines)) {
         jpeg_abort_decompress(&decoder->mjpeg_cinfo);
-        g_return_val_if_reached(G_SOURCE_REMOVE);
+        g_return_if_reached();
     }
 
     while (decoder->mjpeg_cinfo.output_scanline < decoder->mjpeg_cinfo.output_height) {
@@ -163,8 +163,6 @@ static gboolean mjpeg_decoder_decode_frame(gpointer video_decoder)
 
     /* Schedule the next frame */
     mjpeg_decoder_schedule(decoder);
-
-    return G_SOURCE_REMOVE;
 }
 
 /* ---------- VideoDecoder's queue scheduling ---------- */
@@ -183,7 +181,7 @@ static void mjpeg_decoder_schedule(MJpegDecoder *decoder)
             if (spice_mmtime_diff(time, frame->mm_time) <= 0) {
                 guint32 d = frame->mm_time - time;
                 decoder->cur_frame = frame;
-                decoder->timer_id = g_timeout_add(d, mjpeg_decoder_decode_frame, decoder);
+                decoder->timer_id = g_timeout_add_once(d, mjpeg_decoder_decode_frame, decoder);
                 break;
             }
 

@@ -2466,7 +2466,7 @@ static gboolean spice_channel_iterate(SpiceChannel *channel)
 
 /* we use an idle function to allow the coroutine to exit before we actually
  * unref the object since the coroutine's state is part of the object */
-static gboolean spice_channel_delayed_unref(gpointer data)
+static void spice_channel_delayed_unref(gpointer data)
 {
     SpiceChannel *channel = SPICE_CHANNEL(data);
     SpiceChannelPrivate *c = channel->priv;
@@ -2474,7 +2474,7 @@ static gboolean spice_channel_delayed_unref(gpointer data)
 
     CHANNEL_DEBUG(channel, "Delayed unref channel %p", channel);
 
-    g_return_val_if_fail(c->coroutine.coroutine.exited == TRUE, FALSE);
+    g_return_if_fail(c->coroutine.coroutine.exited == TRUE);
 
     c->state = SPICE_CHANNEL_STATE_UNCONNECTED;
 
@@ -2488,8 +2488,6 @@ static gboolean spice_channel_delayed_unref(gpointer data)
         g_coroutine_signal_emit(channel, signals[SPICE_CHANNEL_EVENT], 0, SPICE_CHANNEL_CLOSED);
 
     g_object_unref(channel);
-
-    return FALSE;
 }
 
 static int spice_channel_load_ca(SpiceChannel *channel)
@@ -2763,13 +2761,13 @@ cleanup:
         c->event = SPICE_CHANNEL_ERROR_CONNECT;
     }
 
-    G_GNUC_UNUSED guint idle_id = g_idle_add(spice_channel_delayed_unref, channel);
+    G_GNUC_UNUSED guint idle_id = g_idle_add_once(spice_channel_delayed_unref, channel);
     /* Co-routine exits now - the SpiceChannel object may no longer exist,
        so don't do anything else now unless you like SEGVs */
     return NULL;
 }
 
-static gboolean connect_delayed(gpointer data)
+static void connect_delayed(gpointer data)
 {
     SpiceChannel *channel = data;
     SpiceChannelPrivate *c = channel->priv;
@@ -2785,8 +2783,6 @@ static gboolean connect_delayed(gpointer data)
 
     coroutine_init(co);
     coroutine_yieldto(co, channel);
-
-    return FALSE;
 }
 
 /* any context */
@@ -2822,7 +2818,7 @@ static gboolean channel_connect(SpiceChannel *channel, gboolean tls)
     g_object_ref(G_OBJECT(channel)); /* Unref'd when co-routine exits */
 
     /* we connect in idle, to let previous coroutine exit, if present */
-    c->connect_delayed_id = g_idle_add(connect_delayed, channel);
+    c->connect_delayed_id = g_idle_add_once(connect_delayed, channel);
 
     return true;
 }

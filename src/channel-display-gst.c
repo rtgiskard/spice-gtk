@@ -138,7 +138,7 @@ static int spice_gst_buffer_get_stride(GstBuffer *buffer)
 }
 
 /* main context */
-static gboolean display_frame(gpointer video_decoder)
+static void display_frame(gpointer video_decoder)
 {
     SpiceGstDecoder *decoder = (SpiceGstDecoder*)video_decoder;
     SpiceGstFrame *gstframe;
@@ -153,7 +153,7 @@ static gboolean display_frame(gpointer video_decoder)
     gstframe = g_steal_pointer(&decoder->display_frame);
     g_mutex_unlock(&decoder->queues_mutex);
     /* If the queue is empty we don't even need to reschedule */
-    g_return_val_if_fail(gstframe, G_SOURCE_REMOVE);
+    g_return_if_fail(gstframe);
 
     if (!gstframe->decoded_sample) {
         spice_warning("got a frame without a sample!");
@@ -186,7 +186,6 @@ static gboolean display_frame(gpointer video_decoder)
  error:
     free_gst_frame(gstframe);
     schedule_frame(decoder);
-    return G_SOURCE_REMOVE;
 }
 
 /* Returns the decoding queue entry that matches the specified GStreamer buffer.
@@ -302,13 +301,12 @@ static void schedule_frame(SpiceGstDecoder *decoder)
         }
 
         if (spice_mmtime_diff(gstframe->encoded_frame->mm_time, now) >= 0) {
-            decoder->timer_id = g_timeout_add(gstframe->encoded_frame->mm_time - now,
-                                              display_frame, decoder);
+            decoder->timer_id = g_timeout_add_once(gstframe->encoded_frame->mm_time - now, display_frame, decoder);
         } else if (decoder->display_frame && !decoder->pending_samples) {
             /* Still attempt to display the least out of date frame so the
              * video is not completely frozen for an extended period of time.
              */
-            decoder->timer_id = g_timeout_add(0, display_frame, decoder);
+            decoder->timer_id = g_timeout_add_once(0, display_frame, decoder);
         } else {
             SPICE_DEBUG("%s: rendering too late by %u ms (ts: %u, mmtime: %u), dropping",
                         __FUNCTION__, now - gstframe->encoded_frame->mm_time,

@@ -28,15 +28,13 @@ typedef struct _Fixture {
     guint timeout;
 } Fixture;
 
-static gboolean
+static void
 stop_loop (gpointer data)
 {
     GMainLoop *loop = data;
 
     g_main_loop_quit (loop);
     g_assert_not_reached();
-
-    return G_SOURCE_REMOVE;
 }
 
 static void
@@ -65,7 +63,7 @@ fixture_set_up(Fixture *fixture,
     fixture->sources = NULL;
     fixture->cancellable = g_cancellable_new();
     fixture->loop = g_main_loop_new (NULL, FALSE);
-    fixture->timeout = g_timeout_add (1000, stop_loop, fixture->loop);
+    fixture->timeout = g_timeout_add_once(1000, stop_loop, fixture->loop);
 }
 
 static void

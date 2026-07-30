@@ -1836,7 +1836,7 @@ void spice_session_channel_migrate(SpiceSession *session, SpiceChannel *channel)
 }
 
 /* main context */
-static gboolean after_main_init(gpointer data)
+static void after_main_init(gpointer data)
 {
     SpiceSession *self = data;
     SpiceSessionPrivate *s = self->priv;
@@ -1852,7 +1852,6 @@ static gboolean after_main_init(gpointer data)
     }
 
     s->after_main_init = 0;
-    return FALSE;
 }
 
 /* coroutine context */
@@ -1870,7 +1869,7 @@ gboolean spice_session_migrate_after_main_init(SpiceSession *self)
     g_return_val_if_fail(s->after_main_init == 0, FALSE);
 
     s->migrate_wait_init = FALSE;
-    s->after_main_init = g_idle_add(after_main_init, self);
+    s->after_main_init = g_idle_add_once(after_main_init, self);
 
     return TRUE;
 }
@@ -1932,7 +1931,7 @@ gboolean spice_session_get_read_only(SpiceSession *self)
     return self->priv->read_only;
 }
 
-static gboolean session_disconnect_idle(SpiceSession *self)
+static void session_disconnect_idle(SpiceSession *self)
 {
     SpiceSessionPrivate *s = self->priv;
 
@@ -1940,8 +1939,6 @@ static gboolean session_disconnect_idle(SpiceSession *self)
     s->disconnecting = 0;
 
     g_object_unref(self);
-
-    return FALSE;
 }
 
 /**
@@ -1963,7 +1960,7 @@ void spice_session_disconnect(SpiceSession *session)
         return;
 
     g_object_ref(session);
-    s->disconnecting = g_idle_add((GSourceFunc)session_disconnect_idle, session);
+    s->disconnecting = g_idle_add_once((GSourceOnceFunc) session_disconnect_idle, session);
 }
 
 /**
@@ -2094,22 +2091,22 @@ static void proxy_lookup_ready(GObject *source_object, GAsyncResult *result,
 }
 
 /* main context */
-static gboolean open_host_idle_cb(gpointer data)
+static void open_host_idle_cb(gpointer data)
 {
     spice_open_host *open_host = data;
     SpiceSessionPrivate *s;
 
-    g_return_val_if_fail(open_host != NULL, FALSE);
-    g_return_val_if_fail(open_host->connection == NULL, FALSE);
+    g_return_if_fail(open_host != NULL);
+    g_return_if_fail(open_host->connection == NULL);
 
     if (spice_channel_get_session(open_host->channel) != open_host->session)
-        return FALSE;
+        return;
 
     s = open_host->session->priv;
     open_host->proxy = s->proxy;
     if (open_host->error != NULL) {
         coroutine_yieldto(open_host->from, NULL);
-        return FALSE;
+        return;
     }
 
     if (open_host->proxy) {
@@ -2135,7 +2132,7 @@ static gboolean open_host_idle_cb(gpointer data)
 
         if (address == NULL || open_host->error != NULL) {
             coroutine_yieldto(open_host->from, NULL);
-            return FALSE;
+            return;
         }
 
         open_host_connectable_connect(open_host, address);
@@ -2147,8 +2144,6 @@ static gboolean open_host_idle_cb(gpointer data)
         SPICE_DEBUG("(with proxy %s)", str);
         g_free(str);
     }
-
-    return FALSE;
 }
 
 #define SOCKET_TIMEOUT 10
@@ -2205,7 +2200,7 @@ GSocketConnection* spice_session_channel_open_host(SpiceSession *session, SpiceC
     g_socket_client_set_enable_proxy(open_host.client, s->proxy != NULL);
     g_socket_client_set_timeout(open_host.client, SOCKET_TIMEOUT);
 
-    G_GNUC_UNUSED guint idle_id = g_idle_add(open_host_idle_cb, &open_host);
+    G_GNUC_UNUSED guint idle_id = g_idle_add_once(open_host_idle_cb, &open_host);
     /* switch to main loop and wait for connection */
     coroutine_yield(NULL);
 

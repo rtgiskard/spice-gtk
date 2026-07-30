@@ -190,7 +190,7 @@ struct signal_data
     va_list var_args;
 };
 
-static gboolean emit_main_context(gpointer opaque)
+static void emit_main_context(gpointer opaque)
 {
     struct signal_data *signal = opaque;
 
@@ -199,8 +199,6 @@ static gboolean emit_main_context(gpointer opaque)
     signal->notified = TRUE;
 
     coroutine_yieldto(signal->caller, NULL);
-
-    return FALSE;
 }
 
 void
@@ -220,7 +218,7 @@ g_coroutine_signal_emit(gpointer instance, guint signal_id,
         g_signal_emit_valist(instance, signal_id, detail, data.var_args);
     } else {
         g_object_ref(instance);
-        G_GNUC_UNUSED guint idle_id = g_idle_add(emit_main_context, &data);
+        G_GNUC_UNUSED guint idle_id = g_idle_add_once(emit_main_context, &data);
         coroutine_yield(NULL);
         g_warn_if_fail(data.notified);
         g_object_unref(instance);
@@ -230,7 +228,7 @@ g_coroutine_signal_emit(gpointer instance, guint signal_id,
 }
 
 
-static gboolean notify_main_context(gpointer opaque)
+static void notify_main_context(gpointer opaque)
 {
     struct signal_data *signal = opaque;
 
@@ -238,8 +236,6 @@ static gboolean notify_main_context(gpointer opaque)
     signal->notified = TRUE;
 
     coroutine_yieldto(signal->caller, NULL);
-
-    return FALSE;
 }
 
 /* coroutine -> main context */
@@ -257,7 +253,7 @@ void g_coroutine_object_notify(GObject *object,
         data.propname = (gpointer)property_name;
         data.notified = FALSE;
 
-        G_GNUC_UNUSED guint idle_id = g_idle_add(notify_main_context, &data);
+        G_GNUC_UNUSED guint idle_id = g_idle_add_once(notify_main_context, &data);
 
         /* This switches to the system coroutine context, lets
          * the idle function run to dispatch the signal, and

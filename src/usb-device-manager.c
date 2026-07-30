@@ -836,7 +836,7 @@ struct hotplug_idle_cb_args {
     gboolean               added;
 };
 
-static gboolean spice_usb_device_manager_hotplug_idle_cb(gpointer user_data)
+static void spice_usb_device_manager_hotplug_idle_cb(gpointer user_data)
 {
     struct hotplug_idle_cb_args *args = user_data;
     SpiceUsbDeviceManager *manager = SPICE_USB_DEVICE_MANAGER(args->manager);
@@ -850,7 +850,6 @@ static gboolean spice_usb_device_manager_hotplug_idle_cb(gpointer user_data)
     spice_usb_backend_device_unref(args->device);
     g_object_unref(manager);
     g_free(args);
-    return FALSE;
 }
 
 /* Can be called from both the main-thread as well as the event_thread */
@@ -864,7 +863,7 @@ static void spice_usb_device_manager_hotplug_cb(void *user_data,
     args->manager = g_object_ref(manager);
     args->device = spice_usb_backend_device_ref(dev);
     args->added = added;
-    G_GNUC_UNUSED guint idle_id = g_idle_add(spice_usb_device_manager_hotplug_idle_cb, args);
+    G_GNUC_UNUSED guint idle_id = g_idle_add_once(spice_usb_device_manager_hotplug_idle_cb, args);
 }
 
 static void spice_usb_device_manager_channel_connect_cb(GObject *gobject,

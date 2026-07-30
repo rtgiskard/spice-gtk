@@ -602,7 +602,7 @@ typedef struct device_error_data {
 } device_error_data;
 
 /* main context */
-static gboolean device_error(gpointer user_data)
+static void device_error(gpointer user_data)
 {
     device_error_data *data = user_data;
     SpiceUsbredirChannel *channel = data->channel;
@@ -617,7 +617,6 @@ static gboolean device_error(gpointer user_data)
     }
 
     coroutine_yieldto(data->caller, NULL);
-    return FALSE;
 }
 
 /* --------------------------------------------------------------------- */
@@ -711,7 +710,7 @@ static void usbredir_handle_msg(SpiceChannel *c, SpiceMsgIn *in)
         err_data.device = spice_usb_backend_device_ref(device);
         err_data.error = err;
         spice_usbredir_channel_unlock(channel);
-        G_GNUC_UNUSED guint idle_id = g_idle_add(device_error, &err_data);
+        G_GNUC_UNUSED guint idle_id = g_idle_add_once(device_error, &err_data);
         coroutine_yield(NULL);
 
         spice_usb_backend_device_unref(err_data.device);

@@ -1517,7 +1517,7 @@ static gboolean any_display_has_dimensions(SpiceMainChannel *channel)
 }
 
 /* main context*/
-static gboolean timer_set_display(gpointer data)
+static void timer_set_display(gpointer data)
 {
     SpiceMainChannel *channel = data;
     SpiceMainChannelPrivate *c = channel->priv;
@@ -1526,11 +1526,11 @@ static gboolean timer_set_display(gpointer data)
 
     c->timer_id = 0;
     if (!c->agent_connected)
-        return FALSE;
+        return;
 
     if (!any_display_has_dimensions(channel)) {
         SPICE_DEBUG("Not sending monitors config, at least one monitor must have dimensions");
-        return FALSE;
+        return;
     }
 
     session = spice_channel_get_session(SPICE_CHANNEL(channel));
@@ -1541,12 +1541,10 @@ static gboolean timer_set_display(gpointer data)
         for (i = 0; i < spice_session_get_n_display_channels(session); i++)
             if (c->display[i].display_state == DISPLAY_UNDEFINED) {
                 SPICE_DEBUG("Not sending monitors config, missing monitors");
-                return FALSE;
+                return;
             }
     }
     spice_main_channel_send_monitor_config(channel);
-
-    return FALSE;
 }
 
 /* any context  */
@@ -1558,13 +1556,13 @@ static void update_display_timer(SpiceMainChannel *channel, guint seconds)
         g_source_remove(c->timer_id);
 
     if (seconds != 0) {
-        c->timer_id = g_timeout_add_seconds(seconds, timer_set_display, channel);
+        c->timer_id = g_timeout_add_seconds_once(seconds, timer_set_display, channel);
     } else {
         /* We need to special case 0, as we want the callback to fire as soon
          * as possible. g_timeout_add_seconds(0) would set up a timer which would fire
          * at the next second boundary, which might be nearly 1 full second later.
          */
-        c->timer_id = g_timeout_add(0, timer_set_display, channel);
+        c->timer_id = g_timeout_add_once(0, timer_set_display, channel);
     }
 
 }
@@ -1750,16 +1748,14 @@ typedef struct channel_new {
 } channel_new_t;
 
 /* main context */
-static gboolean _channel_new(channel_new_t *c)
+static void _channel_new(channel_new_t *c)
 {
-    g_return_val_if_fail(c != NULL, FALSE);
+    g_return_if_fail(c != NULL);
 
     spice_channel_new(c->session, c->type, c->id);
 
     g_object_unref(c->session);
     g_free(c);
-
-    return FALSE;
 }
 
 /* coroutine context */
@@ -1784,7 +1780,7 @@ static void main_handle_channels_list(SpiceChannel *channel, SpiceMsgIn *in)
         c->id = msg->channels[i].id;
         /* no need to explicitly switch to main context, since
            synchronous call is not needed. */
-        G_GNUC_UNUSED guint idle_id = g_idle_add((GSourceFunc)_channel_new, c);
+        G_GNUC_UNUSED guint idle_id = g_idle_add_once((GSourceOnceFunc) _channel_new, c);
     }
 }
 
@@ -2542,7 +2538,7 @@ static void main_handle_migrate_dst_seamless_nack(SpiceChannel *channel, SpiceMs
 }
 
 /* main context */
-static gboolean migrate_delayed(gpointer data)
+static void migrate_delayed(gpointer data)
 {
     SpiceChannel *channel = data;
     SpiceMainChannelPrivate *c = SPICE_MAIN_CHANNEL(channel)->priv;
@@ -2551,8 +2547,6 @@ static gboolean migrate_delayed(gpointer data)
     c->migrate_delayed_id = 0;
 
     spice_session_migrate_end(channel->priv->session);
-
-    return FALSE;
 }
 
 /* coroutine context */
@@ -2565,11 +2559,11 @@ static void main_handle_migrate_end(SpiceChannel *channel, SpiceMsgIn *in)
     g_return_if_fail(c->migrate_delayed_id == 0);
     g_return_if_fail(spice_channel_test_capability(channel, SPICE_MAIN_CAP_SEMI_SEAMLESS_MIGRATE));
 
-    c->migrate_delayed_id = g_idle_add(migrate_delayed, channel);
+    c->migrate_delayed_id = g_idle_add_once(migrate_delayed, channel);
 }
 
 /* main context */
-static gboolean switch_host_delayed(gpointer data)
+static void switch_host_delayed(gpointer data)
 {
     SpiceChannel *channel = data;
     SpiceSession *session;
@@ -2582,8 +2576,6 @@ static gboolean switch_host_delayed(gpointer data)
 
     spice_channel_disconnect(channel, SPICE_CHANNEL_SWITCHING);
     spice_session_switching_disconnect(session);
-
-    return FALSE;
 }
 
 /* coroutine context */
@@ -2622,7 +2614,7 @@ static void main_handle_migrate_switch_host(SpiceChannel *channel, SpiceMsgIn *i
     spice_session_set_port(session, mig->port, FALSE);
     spice_session_set_port(session, mig->sport, TRUE);
 
-    c->switch_host_delayed_id = g_idle_add(switch_host_delayed, channel);
+    c->switch_host_delayed_id = g_idle_add_once(switch_host_delayed, channel);
 }
 
 /* coroutine context */

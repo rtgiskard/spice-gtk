@@ -2019,7 +2019,7 @@ static void display_handle_surface_create(SpiceChannel *channel, SpiceMsgIn *in)
     }
 }
 
-static gboolean display_mark_false(gpointer data)
+static void display_mark_false(gpointer data)
 {
     SpiceChannel *channel = data;
     SpiceDisplayChannelPrivate *c = SPICE_DISPLAY_CHANNEL(channel)->priv;
@@ -2028,7 +2028,6 @@ static gboolean display_mark_false(gpointer data)
     g_signal_emit(channel, signals[SPICE_DISPLAY_MARK], 0, FALSE);
 
     c->mark_false_event_id = 0;
-    return FALSE;
 }
 
 /* coroutine context */
@@ -2051,7 +2050,7 @@ static void display_handle_surface_destroy(SpiceChannel *channel, SpiceMsgIn *in
         CHANNEL_DEBUG(channel, "%d: FIXME primary destroy, but is display really disabled?", id);
         /* this is done with a timeout in spicec as well, it's *ugly* */
         if (id != 0 && c->mark_false_event_id == 0) {
-            c->mark_false_event_id = g_timeout_add_seconds(1, display_mark_false, channel);
+            c->mark_false_event_id = g_timeout_add_seconds_once(1, display_mark_false, channel);
         }
         c->primary = NULL;
         g_coroutine_signal_emit(channel, signals[SPICE_DISPLAY_PRIMARY_DESTROY], 0);

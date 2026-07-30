@@ -102,7 +102,7 @@ typedef struct _complete_in_idle_cb_data {
     gssize pos;
 } complete_in_idle_cb_data;
 
-static gboolean
+static void
 complete_in_idle_cb(gpointer user_data)
 {
     complete_in_idle_cb_data *data = user_data;
@@ -111,8 +111,6 @@ complete_in_idle_cb(gpointer user_data)
 
     g_object_unref (data->task);
     g_free (data);
-
-    return FALSE;
 }
 
 /* coroutine */
@@ -162,7 +160,7 @@ spice_vmc_input_stream_co_data(SpiceVmcInputStream *self,
         cb_data = g_new(complete_in_idle_cb_data , 1);
         cb_data->task = g_object_ref(self->task);
         cb_data->pos = self->pos;
-        G_GNUC_UNUSED guint idle_id = g_idle_add(complete_in_idle_cb, cb_data);
+        G_GNUC_UNUSED guint idle_id = g_idle_add_once(complete_in_idle_cb, cb_data);
 
         g_clear_object(&self->task);
     }
