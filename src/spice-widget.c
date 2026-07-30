@@ -82,6 +82,9 @@
  * save to disk).
  */
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(cairo_t, cairo_destroy)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(cairo_surface_t, cairo_surface_destroy)
+
 G_DEFINE_TYPE_WITH_PRIVATE(SpiceDisplay, spice_display, GTK_TYPE_EVENT_BOX)
 
 /* Properties */
@@ -564,11 +567,11 @@ static void drag_data_received_callback(SpiceDisplay *self,
                                         gpointer *user_data)
 {
     const guchar *buf;
-    gchar **file_urls;
+    g_auto(GStrv) file_urls = NULL;
     int n_files;
     SpiceDisplayPrivate *d = self->priv;
     int i = 0;
-    GFile **files;
+    g_autofree GFile **files = NULL;
 
     /* We get a buf like:
      * file:///root/a.txt\r\nfile:///root/b.txt\r\n
@@ -583,14 +586,12 @@ static void drag_data_received_callback(SpiceDisplay *self,
     for (i = 0; i < n_files; i++) {
         files[i] = g_file_new_for_uri(file_urls[i]);
     }
-    g_strfreev(file_urls);
 
     spice_main_channel_file_copy_async(d->main, files, 0, NULL, NULL, NULL, file_transfer_callback,
                                        NULL);
     for (i = 0; i < n_files; i++) {
         g_object_unref(files[i]);
     }
-    g_free(files);
 
     gtk_drag_finish(drag_context, TRUE, FALSE, time);
 }
@@ -1897,14 +1898,13 @@ static guint get_scancode_from_keyval(SpiceDisplay *display, guint keyval)
 {
     SpiceDisplayPrivate *d = display->priv;
     guint keycode = 0;
-    GdkKeymapKey *keys = NULL;
+    g_autofree GdkKeymapKey *keys = NULL;
     gint n_keys = 0;
     GdkKeymap *keymap = gdk_keymap_get_for_display(gdk_display_get_default());
 
     if (gdk_keymap_get_entries_for_keyval(keymap, keyval, &keys, &n_keys)) {
         /* FIXME what about levels? */
         keycode = keys[0].keycode;
-        g_free(keys);
     } else {
         g_warning("could not lookup keyval %u, please report a bug", keyval);
         return 0;
@@ -2802,11 +2802,10 @@ static void gst_sync_bus_call(GstBus *bus, GstMessage *msg, SpiceDisplay *displa
 
 #if defined(HAVE_LIBVA)
         if (g_strcmp0(context_type, "gst.vaapi.app.Display") == 0) {
-            GstContext *context = create_vaapi_context();
+            g_autoptr(GstContext) context = create_vaapi_context();
 
             if (context) {
                 gst_element_set_context(GST_ELEMENT(msg->src), context);
-                gst_context_unref(context);
             }
         }
 #endif
@@ -2827,8 +2826,8 @@ static gboolean gst_draw_event(GtkWidget *widget, cairo_t *cr, gpointer data)
 
     if (overlay) {
         gst_video_overlay_expose(overlay);
-        gst_object_unref(overlay);
         update_mouse_pointer(display);
+        g_object_unref(overlay);
         return true;
     }
     return false;
@@ -2845,7 +2844,7 @@ static void gst_size_allocate(GtkWidget *widget, GdkRectangle *a, gpointer data)
 
         gst_video_overlay_set_render_rectangle(overlay, a->x * scale, a->y * scale,
                                                a->width * scale, a->height * scale);
-        gst_object_unref(overlay);
+        g_object_unref(overlay);
     }
 }
 
@@ -2871,13 +2870,12 @@ static gboolean set_overlay(SpiceChannel *channel, void* pipeline_ptr, SpiceDisp
 
         window = gtk_widget_get_window(GTK_WIDGET(display));
         if (window && gdk_window_ensure_native(window)) {
-            GstBus *bus;
+            g_autoptr(GstBus) bus = NULL;
 
             gtk_stack_set_visible_child_name(d->stack, "gst-area");
             bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline_ptr));
             gst_bus_enable_sync_message_emission(bus);
             g_signal_connect(bus, "sync-message", G_CALLBACK(gst_sync_bus_call), display);
-            gst_object_unref(bus);
             return true;
         }
     }
@@ -2990,8 +2988,8 @@ static void update_mouse_cursor(SpiceDisplay *display)
 {
     SpiceDisplayPrivate *d = display->priv;
     GdkCursor *cursor = NULL;
-    cairo_t *cursor_ctx;
-    cairo_surface_t *surface, *target;
+    g_autoptr(cairo_t) cursor_ctx = NULL;
+    g_autoptr(cairo_surface_t) surface = NULL;
     double scale;
     gint scale_factor;
     gint hotspot_x, hotspot_y;
@@ -3018,7 +3016,7 @@ static void update_mouse_cursor(SpiceDisplay *display)
 
     /* scale mouse cursor surface */
     surface = gdk_cairo_surface_create_from_pixbuf(d->mouse_pixbuf, 0, gtk_widget_get_window(GTK_WIDGET(display)));
-    target = cairo_image_surface_create(cairo_image_surface_get_format(surface),
+    g_autoptr(cairo_surface_t) target = cairo_image_surface_create(cairo_image_surface_get_format(surface),
                                         scale * gdk_pixbuf_get_width(d->mouse_pixbuf),
                                         scale * gdk_pixbuf_get_height(d->mouse_pixbuf));
 
@@ -3031,10 +3029,6 @@ static void update_mouse_cursor(SpiceDisplay *display)
     cairo_paint(cursor_ctx);
 
     d->cursor_surface = cairo_surface_reference(cairo_get_target(cursor_ctx));
-
-    cairo_surface_destroy(target);
-    cairo_surface_destroy(surface);
-    cairo_destroy(cursor_ctx);
 
     hotspot_x = d->mouse_hotspot.x * scale;
     hotspot_y = d->mouse_hotspot.y * scale;
@@ -3226,7 +3220,7 @@ static void inputs_channel_event(SpiceChannel *channel, SpiceChannelEvent event,
 {
     SpiceDisplay *display = data;
     guint delay = DEFAULT_KEYPRESS_DELAY;
-    GSocket *sock;
+    g_autoptr(GSocket) sock = NULL;
 
     if (event != SPICE_CHANNEL_OPENED)
         return;
@@ -3235,7 +3229,6 @@ static void inputs_channel_event(SpiceChannel *channel, SpiceChannelEvent event,
     if (g_socket_get_family(sock) == G_SOCKET_FAMILY_UNIX) {
         delay = 0;
     }
-    g_object_unref(sock);
 
     spice_display_set_keypress_delay(display, delay);
 }
