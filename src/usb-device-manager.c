@@ -701,20 +701,17 @@ static void spice_usb_device_manager_auto_connect_cb(GObject      *gobject,
                                                      gpointer      user_data)
 {
     SpiceUsbDeviceManager *manager = SPICE_USB_DEVICE_MANAGER(gobject);
-    SpiceUsbDevice *device = user_data;
-    GError *err = NULL;
+    g_autoptr(SpiceUsbDevice) device = user_data;
+    g_autoptr(GError) err = NULL;
 
     spice_usb_device_manager_connect_device_finish(manager, res, &err);
     if (err) {
-        gchar *desc = spice_usb_device_get_description(device, NULL);
+        g_autofree gchar *desc = spice_usb_device_get_description(device, NULL);
         g_prefix_error(&err, "Could not auto-redirect %s: ", desc);
-        g_free(desc);
 
         SPICE_DEBUG("%s", err->message);
         g_signal_emit(manager, signals[AUTO_CONNECT_FAILED], 0, device, err);
-        g_error_free(err);
     }
-    spice_usb_device_unref(device);
 }
 
 static gboolean
@@ -795,7 +792,7 @@ static void spice_usb_device_manager_remove_dev(SpiceUsbDeviceManager *manager,
                                                 SpiceUsbDevice *bdev)
 {
     SpiceUsbDeviceManagerPrivate *priv = manager->priv;
-    SpiceUsbDevice *device;
+    g_autoptr(SpiceUsbDevice) device = NULL;
     const UsbDeviceInformation *b_info = spice_usb_backend_device_get_info(bdev);
 
     device = spice_usb_device_manager_find_device(manager, b_info->bus, b_info->address);
@@ -815,7 +812,6 @@ static void spice_usb_device_manager_remove_dev(SpiceUsbDeviceManager *manager,
     spice_usb_device_ref(device);
     g_ptr_array_remove(priv->devices, device);
     g_signal_emit(manager, signals[DEVICE_REMOVED], 0, device);
-    spice_usb_device_unref(device);
 }
 
 struct hotplug_idle_cb_args {
@@ -826,8 +822,8 @@ struct hotplug_idle_cb_args {
 
 static void spice_usb_device_manager_hotplug_idle_cb(gpointer user_data)
 {
-    struct hotplug_idle_cb_args *args = user_data;
-    SpiceUsbDeviceManager *manager = SPICE_USB_DEVICE_MANAGER(args->manager);
+    g_autofree struct hotplug_idle_cb_args *args = user_data;
+    g_autoptr(SpiceUsbDeviceManager) manager = SPICE_USB_DEVICE_MANAGER(args->manager);
 
     if (args->added) {
         spice_usb_device_manager_add_dev(manager, args->device);
@@ -836,8 +832,6 @@ static void spice_usb_device_manager_hotplug_idle_cb(gpointer user_data)
     }
 
     spice_usb_backend_device_unref(args->device);
-    g_object_unref(manager);
-    g_free(args);
 }
 
 /* Can be called from both the main-thread as well as the event_thread */
@@ -859,17 +853,15 @@ static void spice_usb_device_manager_channel_connect_cb(GObject *gobject,
                                                         gpointer user_data)
 {
     SpiceUsbredirChannel *channel = SPICE_USBREDIR_CHANNEL(gobject);
-    GTask *task = G_TASK(user_data);
-    GError *err = NULL;
+    g_autoptr(GTask) task = G_TASK(user_data);
+    g_autoptr(GError) err = NULL;
 
     spice_usbredir_channel_connect_device_finish(channel, channel_res, &err);
     if (err) {
-        g_task_return_error(task, err);
+        g_task_return_error(task, g_steal_pointer(&err));
     } else {
         g_task_return_boolean(task, TRUE);
     }
-
-    g_object_unref(task);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1084,7 +1076,7 @@ _spice_usb_device_manager_connect_device_async(SpiceUsbDeviceManager *manager,
                                                GAsyncReadyCallback callback,
                                                gpointer user_data)
 {
-    GTask *task;
+    g_autoptr(GTask) task = NULL;
 
     g_return_if_fail(SPICE_IS_USB_DEVICE_MANAGER(manager));
     g_return_if_fail(device != NULL);
@@ -1115,15 +1107,14 @@ _spice_usb_device_manager_connect_device_async(SpiceUsbDeviceManager *manager,
                                                     device,
                                                     cancellable,
                                                     spice_usb_device_manager_channel_connect_cb,
-                                                    task);
+                                                    g_steal_pointer(&task));
         return;
     }
 
     g_task_return_new_error(task,
                             SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
                             _("No free USB channel"));
-done:
-    g_object_unref(task);
+done:;
 }
 
 #endif
@@ -1213,8 +1204,8 @@ void _connect_device_async_cb(GObject *gobject,
                               gpointer user_data)
 {
     SpiceUsbDeviceManager *manager = SPICE_USB_DEVICE_MANAGER(gobject);
-    GTask *task = user_data;
-    GError *err = NULL;
+    g_autoptr(GTask) task = user_data;
+    g_autoptr(GError) err = NULL;
     gboolean rc;
 
     _set_redirecting(manager, FALSE);
@@ -1226,9 +1217,8 @@ void _connect_device_async_cb(GObject *gobject,
         SpiceUsbDevice *device = g_task_get_task_data(task);
 
         spice_usb_device_manager_handle_disconnect(manager, device);
-        g_task_return_error(task, err);
+        g_task_return_error(task, g_steal_pointer(&err));
     }
-    g_object_unref(task);
 }
 #endif
 
@@ -1271,23 +1261,21 @@ void _disconnect_device_async_cb(GObject *gobject,
                                  gpointer user_data)
 {
     SpiceUsbredirChannel *channel = SPICE_USBREDIR_CHANNEL(gobject);
-    GTask *task = user_data;
+    g_autoptr(GTask) task = user_data;
     SpiceUsbDeviceManager *manager = SPICE_USB_DEVICE_MANAGER(g_task_get_source_object(task));
     SpiceUsbDevice *device = g_task_get_task_data(task);
-    GError *err = NULL;
+    g_autoptr(GError) err = NULL;
 
     _set_redirecting(manager, FALSE);
 
     spice_usbredir_channel_disconnect_device_finish(channel, channel_res, &err);
     if (err) {
-        g_task_return_error(task, err);
+        g_task_return_error(task, g_steal_pointer(&err));
     } else {
         g_task_return_boolean(task, TRUE);
 
         spice_usb_device_manager_handle_disconnect(manager, device);
     }
-
-    g_object_unref(task);
 }
 #endif
 
