@@ -282,14 +282,13 @@ static void update_proxy(SpiceSession *self, const gchar *str)
 static void spice_session_init(SpiceSession *session)
 {
     SpiceSessionPrivate *s;
-    gchar *channels;
+    g_autofree gchar *channels = NULL;
 
     SPICE_DEBUG("New session (compiled from package " PACKAGE_STRING ")");
     s = session->priv = spice_session_get_instance_private(session);
 
     channels = spice_channel_supported_string();
     SPICE_DEBUG("Supported channels: %s", channels);
-    g_free(channels);
 
     s->images = cache_image_new((GDestroyNotify)pixman_image_unref);
     s->glz_window = glz_decoder_window_new();
@@ -421,7 +420,7 @@ static gchar* spice_uri_create(SpiceSession *session)
 static int spice_parse_uri(SpiceSession *session, const char *original_uri)
 {
     SpiceSessionPrivate *s = session->priv;
-    gchar *host = NULL, *port = NULL, *tls_port = NULL, *uri = NULL, *username = NULL, *password = NULL;
+    g_autofree gchar *host = NULL, *port = NULL, *tls_port = NULL, *uri = NULL, *username = NULL, *password = NULL;
     gchar *path = NULL;
     gchar *authority = NULL;
     gchar *query = NULL;
@@ -448,7 +447,7 @@ static int spice_parse_uri(SpiceSession *session, const char *original_uri)
     } else {
         g_warning("Expected a URI scheme of '%s' in URI '%s'",
                   URI_SCHEME_SPICE, uri);
-        goto fail;
+        return -1;
     }
 
     tmp = strchr(authority, '@');
@@ -484,7 +483,7 @@ static int spice_parse_uri(SpiceSession *session, const char *original_uri)
         tmp = strchr(authority, ']');
         if (!tmp) {
             g_warning("Missing closing ']' in authority for URI '%s'", uri);
-            goto fail;
+            return -1;
         }
         tmp[0] = '\0';
         tmp++;
@@ -515,7 +514,7 @@ static int spice_parse_uri(SpiceSession *session, const char *original_uri)
         int len;
         if (sscanf(query, "%31[-a-zA-Z0-9]=%n", key, &len) != 1) {
             g_warning("Failed to parse key in URI '%s'", query);
-            goto fail;
+            return -1;
         }
 
         query += len;
@@ -530,7 +529,7 @@ static int spice_parse_uri(SpiceSession *session, const char *original_uri)
 
         if (sscanf(query, "%127[^;&]%n", value, &len) != 1) {
             g_warning("Failed to parse value of key '%s' in URI '%s'", key, query);
-            goto fail;
+            return -1;
         }
 
         query += len;
@@ -552,12 +551,12 @@ static int spice_parse_uri(SpiceSession *session, const char *original_uri)
             g_warning("password may be visible in process listings");
         } else {
             g_warning("unknown key in spice URI parsing: '%s'", key);
-            goto fail;
+            return -1;
         }
         if (target_key) {
             if (*target_key) {
                 g_warning("Double set of '%s' in URI '%s'", key, original_uri);
-                goto fail;
+                return -1;
             }
             *target_key = g_uri_unescape_string(value, NULL);
         }
@@ -565,7 +564,7 @@ static int spice_parse_uri(SpiceSession *session, const char *original_uri)
 
     if (port == NULL && tls_port == NULL) {
         g_warning("Missing port or tls-port in spice URI '%s'", original_uri);
-        goto fail;
+        return -1;
     }
 
 end:
@@ -577,26 +576,17 @@ end:
     g_free(s->username);
     g_free(s->password);
     s->unix_path = g_strdup(path);
-    g_free(uri);
-    s->host = host;
+    s->host = g_steal_pointer(&host);
     if (tls_scheme) {
-        s->tls_port = port;
+        s->port = NULL;
+        s->tls_port = g_steal_pointer(&port);
     } else {
-        s->port = port;
-        s->tls_port = tls_port;
+        s->port = g_steal_pointer(&port);
+        s->tls_port = g_steal_pointer(&tls_port);
     }
-    s->username = username;
-    s->password = password;
+    s->username = g_steal_pointer(&username);
+    s->password = g_steal_pointer(&password);
     return 0;
-
-fail:
-    g_free(uri);
-    g_free(host);
-    g_free(port);
-    g_free(tls_port);
-    g_free(username);
-    g_free(password);
-    return -1;
 }
 
 static void spice_session_get_property(GObject    *gobject,
@@ -1973,7 +1963,7 @@ static void proxy_lookup_ready(GObject *source_object, GAsyncResult *result,
     SpiceSession *session = open_host->session;
     SpiceSessionPrivate *s = session->priv;
     GList *addresses = NULL, *it;
-    GSocketAddress *address;
+    g_autoptr(GSocketAddress) address = NULL;
 
     SPICE_DEBUG("proxy lookup ready");
     addresses = g_resolver_lookup_by_name_finish(G_RESOLVER(source_object),
@@ -1997,7 +1987,6 @@ static void proxy_lookup_ready(GObject *source_object, GAsyncResult *result,
 
     open_host_connectable_connect(open_host, G_SOCKET_CONNECTABLE(address));
     g_resolver_free_addresses(addresses);
-    g_object_unref(address);
 }
 
 /* main context */
@@ -2025,7 +2014,7 @@ static void open_host_idle_cb(gpointer data)
                                         open_host->cancellable,
                                         proxy_lookup_ready, open_host);
     } else {
-        GSocketConnectable *address = NULL;
+        g_autoptr(GSocketConnectable) address = NULL;
 
         if (s->unix_path) {
             SPICE_DEBUG("open unix path %s", s->unix_path);
@@ -2046,13 +2035,11 @@ static void open_host_idle_cb(gpointer data)
         }
 
         open_host_connectable_connect(open_host, address);
-        g_object_unref(address);
     }
 
     if (open_host->proxy != NULL) {
-        gchar *str = spice_uri_to_string(open_host->proxy);
+        g_autofree gchar *str = spice_uri_to_string(open_host->proxy);
         SPICE_DEBUG("(with proxy %s)", str);
-        g_free(str);
     }
 }
 
@@ -2178,13 +2165,13 @@ void spice_session_channel_new(SpiceSession *session, SpiceChannel *channel)
 
 static void channel_finally_destroyed(gpointer data, GObject *channel)
 {
-    SpiceSession *session = SPICE_SESSION(data);
+    g_autoptr(SpiceSession) session = SPICE_SESSION(data);
     SpiceSessionPrivate *s = session->priv;
+
     s->channels_destroying--;
     if (s->channels == NULL && (s->channels_destroying == 0)) {
         g_signal_emit(session, signals[SPICE_SESSION_DISCONNECTED], 0);
     }
-    g_object_unref(session);
 }
 
 static void spice_session_channel_destroy(SpiceSession *session, SpiceChannel *channel)
@@ -2282,14 +2269,13 @@ G_GNUC_INTERNAL
 void spice_session_set_port(SpiceSession *session, int port, gboolean tls)
 {
     const char *prop = tls ? "tls-port" : "port";
-    char *tmp;
+    g_autofree char *tmp = NULL;
 
     g_return_if_fail(SPICE_IS_SESSION(session));
 
     /* old spicec client doesn't accept port == 0, see Migrate::start */
     tmp = port > 0 ? g_strdup_printf("%d", port) : NULL;
     g_object_set(session, prop, tmp, NULL);
-    g_free(tmp);
 }
 
 G_GNUC_INTERNAL
@@ -2538,10 +2524,9 @@ static void spice_session_set_shared_dir(SpiceSession *session, const gchar *dir
         return;
     }
 
-    PhodavVirtualDir *root;
+    g_autoptr(PhodavVirtualDir) root = NULL;
     g_object_get(s->webdav, "root-file", &root, NULL);
     phodav_virtual_dir_root_set_real(root, s->shared_dir);
-    g_object_unref(root);
 #endif
 }
 
@@ -2697,13 +2682,12 @@ PhodavServer* spice_session_get_webdav_server(SpiceSession *session)
 
     if (priv->webdav == NULL) {
 #ifdef HAVE_PHODAV_VIRTUAL
-        PhodavVirtualDir *root = phodav_virtual_dir_new_root();
+        g_autoptr(PhodavVirtualDir) root = phodav_virtual_dir_new_root();
         priv->webdav = phodav_server_new_for_root_file(G_FILE(root));
 
         phodav_virtual_dir_root_set_real(root, shared_dir);
 
         g_object_unref(phodav_virtual_dir_new_dir(root, SPICE_WEBDAV_CLIPBOARD_FOLDER_PATH, NULL));
-        g_object_unref(root);
 #else
         priv->webdav = phodav_server_new(shared_dir);
 #endif
