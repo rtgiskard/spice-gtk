@@ -394,6 +394,7 @@ void spice_file_transfer_task_init_task_async(SpiceFileTransferTask *self,
     g_return_if_fail(self->pending == FALSE);
 
     task = g_task_new(self, self->cancellable, callback, userdata);
+    g_task_set_source_tag(task, spice_file_transfer_task_init_task_async);
 
     self->pending = TRUE;
     g_file_read_async(self->file,
@@ -439,6 +440,7 @@ void spice_file_transfer_task_read_async(SpiceFileTransferTask *self,
     g_coroutine_object_notify(G_OBJECT(self), "transferred-bytes");
 
     task = g_task_new(self, self->cancellable, callback, userdata);
+    g_task_set_source_tag(task, spice_file_transfer_task_read_async);
 
     if (self->read_bytes == self->file_size) {
         /* channel-main might request data after reading the whole file as it

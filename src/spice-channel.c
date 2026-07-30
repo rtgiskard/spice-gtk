@@ -3212,6 +3212,7 @@ void spice_channel_flush_async(SpiceChannel *self, GCancellable *cancellable,
     }
 
     task = g_task_new(self, cancellable, callback, user_data);
+    g_task_set_source_tag(task, spice_channel_flush_async);
 
     g_mutex_lock(&c->xmit_queue_lock);
     was_empty = g_queue_is_empty(&c->xmit_queue);

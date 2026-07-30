@@ -207,6 +207,7 @@ spice_vmc_input_stream_read_all_async(GInputStream        *stream,
                       cancellable,
                       callback,
                       user_data);
+    g_task_set_source_tag(task, spice_vmc_input_stream_read_all_async);
     if (count == 0) {
         g_task_return_int(task, 0);
         g_object_unref(task);
@@ -259,6 +260,7 @@ spice_vmc_input_stream_read_async(GInputStream        *stream,
     self->pos = 0;
 
     task = g_task_new(self, cancellable, callback, user_data);
+    g_task_set_source_tag(task, spice_vmc_input_stream_read_async);
     self->task = task;
     if (cancellable)
         self->cancel_id =
@@ -437,6 +439,7 @@ spice_vmc_output_stream_write_async(GOutputStream *stream,
     SPICE_DEBUG("spicevmc write async");
     /* an AsyncResult to forward async op to channel */
     task = g_task_new(self, cancellable, callback, user_data);
+    g_task_set_source_tag(task, spice_vmc_output_stream_write_async);
 
     spice_vmc_write_async(self->channel, buffer, count,
                           cancellable, write_cb,

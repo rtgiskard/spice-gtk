@@ -426,6 +426,7 @@ void spice_qmp_port_vm_action_async(SpiceQmpPort *self,
     g_return_if_fail(action >= 0 && action < SPICE_QMP_PORT_VM_ACTION_LAST);
 
     task = g_task_new(self, cancellable, callback, user_data);
+    g_task_set_source_tag(task, spice_qmp_port_vm_action_async);
     g_task_set_task_data(task, qmp_empty_return_cb, NULL);
 
     switch (action) {
@@ -482,6 +483,7 @@ SpiceQmpPort *spice_qmp_port_get(SpicePortChannel *channel)
 
         self = g_object_new(SPICE_TYPE_QMP_PORT, "channel", channel, NULL);
         task = g_task_new(self, NULL, NULL, NULL);
+        g_task_set_source_tag(task, spice_qmp_port_get);
         g_task_set_task_data(task, qmp_capabilities_cb, NULL);
         qmp(SPICE_QMP_PORT(self), task, "qmp_capabilities", NULL);
     }
@@ -564,6 +566,7 @@ void spice_qmp_port_query_status_async(SpiceQmpPort *self,
     g_return_if_fail(self->priv->ready);
 
     task = g_task_new(self, cancellable, callback, user_data);
+    g_task_set_source_tag(task, spice_qmp_port_query_status_async);
     g_task_set_task_data(task, qmp_query_status_return_cb, NULL);
 
     qmp(self, task, "query-status", NULL);

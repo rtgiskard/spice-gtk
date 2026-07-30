@@ -927,6 +927,7 @@ static void spice_usb_device_manager_check_redir_on_connect(SpiceUsbDeviceManage
                               NULL,
                               spice_usb_device_manager_auto_connect_cb,
                               spice_usb_device_ref(device));
+            g_task_set_source_tag(task, spice_usb_device_manager_check_redir_on_connect);
 
             spice_usbredir_channel_connect_device_async(SPICE_USBREDIR_CHANNEL(channel),
                                                         device, NULL,
@@ -1103,6 +1104,7 @@ _spice_usb_device_manager_connect_device_async(SpiceUsbDeviceManager *manager,
     SPICE_DEBUG("connecting device %p", device);
 
     task = g_task_new(manager, cancellable, callback, user_data);
+    g_task_set_source_tag(task, _spice_usb_device_manager_connect_device_async);
 
     SpiceUsbDeviceManagerPrivate *priv = manager->priv;
     guint i;
@@ -1161,6 +1163,7 @@ void spice_usb_device_manager_connect_device_async(SpiceUsbDeviceManager *manage
 #ifdef USE_USBREDIR
 
     GTask *task = g_task_new(G_OBJECT(manager), cancellable, callback, user_data);
+    g_task_set_source_tag(task, spice_usb_device_manager_connect_device_async);
 
     g_task_set_task_data(task, device, NULL);
 
@@ -1335,6 +1338,7 @@ void spice_usb_device_manager_disconnect_device_async(SpiceUsbDeviceManager *man
 
     channel = spice_usb_device_manager_get_channel_for_dev(manager, device);
     nested  = g_task_new(G_OBJECT(manager), cancellable, callback, user_data);
+    g_task_set_source_tag(nested, spice_usb_device_manager_disconnect_device_async);
     g_task_set_task_data(nested, device, NULL);
 
     spice_usbredir_channel_disconnect_device_async(channel, cancellable,

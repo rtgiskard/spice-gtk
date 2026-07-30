@@ -346,6 +346,7 @@ void spice_usbredir_channel_connect_device_async(SpiceUsbredirChannel *channel,
                   device, channel);
 
     task = g_task_new(channel, cancellable, callback, user_data);
+    g_task_set_source_tag(task, spice_usbredir_channel_connect_device_async);
 
     if (!priv->host) {
         g_task_return_new_error(task,
@@ -454,6 +455,7 @@ void spice_usbredir_channel_disconnect_device_async(SpiceUsbredirChannel *channe
                                                     gpointer user_data)
 {
     GTask* task = g_task_new(channel, cancellable, callback, user_data);
+    g_task_set_source_tag(task, spice_usbredir_channel_disconnect_device_async);
 
     g_return_if_fail(channel != NULL);
     g_task_run_in_thread(task, _disconnect_device_thread);

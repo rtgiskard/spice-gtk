@@ -504,6 +504,7 @@ void spice_smartcard_manager_init_async(SpiceSession *session,
                                         gpointer opaque)
 {
     GTask *task = g_task_new(session, cancellable, callback, opaque);
+    g_task_set_source_tag(task, spice_smartcard_manager_init_async);
 
     g_task_run_in_thread(task, smartcard_manager_init_helper);
     g_object_unref(task);

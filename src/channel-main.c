@@ -901,6 +901,7 @@ static void file_xfer_flush_async(SpiceFileTransferTask *xfer_task,
                       spice_file_transfer_task_get_cancellable(xfer_task),
                       callback,
                       user_data);
+    g_task_set_source_tag(task, file_xfer_flush_async);
 
     c = channel->priv;
     was_empty = g_queue_is_empty(c->agent_msg_queue);
@@ -3472,6 +3473,7 @@ void spice_main_channel_file_copy_async(SpiceMainChannel *channel,
     xfer_op->progress_callback = progress_callback;
     xfer_op->progress_callback_data = progress_callback_data;
     xfer_op->task = g_task_new(channel, cancellable, callback, user_data);
+    g_task_set_source_tag(xfer_op->task, spice_main_channel_file_copy_async);
     xfer_op->xfer_task = spice_file_transfer_task_create_tasks(sources,
                                                                channel,
                                                                flags,

@@ -257,6 +257,7 @@ void spice_vmc_write_async(SpiceChannel *self,
     GTask *task;
 
     task = g_task_new(self, cancellable, callback, user_data);
+    g_task_set_source_tag(task, spice_vmc_write_async);
     g_task_set_task_data(task, GSIZE_TO_POINTER(count), NULL);
 
     msg = spice_msg_out_new(SPICE_CHANNEL(self), SPICE_MSGC_SPICEVMC_DATA);

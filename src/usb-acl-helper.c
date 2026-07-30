@@ -189,6 +189,7 @@ void spice_usb_acl_helper_open_acl_async(SpiceUsbAclHelper *self,
     gchar buf[128];
 
     task = g_task_new(self, cancellable, callback, user_data);
+    g_task_set_source_tag(task, spice_usb_acl_helper_open_acl_async);
 
     if (priv->out_ch) {
         g_task_return_new_error(task,
