@@ -33,25 +33,22 @@ static void test_spice_uri_bad(const struct test_case invalid_test_cases[], cons
 {
     guint i;
 
-    SpiceURI *uri = spice_uri_new();
+    g_autoptr(SpiceURI) uri = spice_uri_new();
     g_assert_nonnull(uri);
 
     for (i = 0; i < cases_cnt; i++) {
-        GError *error = NULL;
+        g_autoptr(GError) error = NULL;
         g_assert_false(spice_uri_parse(uri, invalid_test_cases[i].uri, &error));
         g_assert_error(error, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED);
         g_assert_cmpstr(error->message, ==, invalid_test_cases[i].error_msg);
-        g_error_free(error);
     }
-
-    g_object_unref(uri);
 }
 
 static void test_spice_uri_good(const struct test_case valid_test_cases[], const guint cases_cnt)
 {
     guint i;
 
-    SpiceURI *uri = spice_uri_new();
+    g_autoptr(SpiceURI) uri = spice_uri_new();
     g_assert_nonnull(uri);
 
     for (i = 0; i < cases_cnt; i++) {
@@ -64,8 +61,6 @@ static void test_spice_uri_good(const struct test_case valid_test_cases[], const
         g_assert_cmpuint(spice_uri_get_port(uri), ==, valid_test_cases[i].port);
         g_assert_no_error(error);
     }
-
-    g_object_unref(uri);
 }
 
 static void test_spice_uri_ipv4_bad(void)
