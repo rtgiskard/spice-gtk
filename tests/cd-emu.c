@@ -200,7 +200,7 @@ static void attach(const void *param)
     messages_sent = 0;
     ch_state = SPICE_CHANNEL_STATE_UNCONNECTED;
 
-    SpiceSession *session = spice_session_new();
+    g_autoptr(SpiceSession) session = spice_session_new();
     g_assert_nonnull(session);
     g_object_weak_ref(G_OBJECT(session), decrement_allocated, NULL);
     SpiceChannel *ch = spice_channel_new(session, SPICE_CHANNEL_USBREDIR, 0);
@@ -279,7 +279,7 @@ static void attach(const void *param)
     // this it's the correct sequence to free session!
     // g_object_unref is not enough, causing wrong reference countings
     spice_session_disconnect(session);
-    g_object_unref(session);
+    g_clear_object(&session);
     while (g_main_context_iteration(NULL, FALSE)) {
         continue;
     }
