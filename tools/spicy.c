@@ -135,7 +135,8 @@ static SpicePortChannel*stdin_port = NULL;
 static int ask_user(GtkWidget *parent, char *title, char *message,
                     char *dest, int dlen, int hide)
 {
-    GtkWidget *dialog, *area, *label, *entry;
+    GtkWidget *area, *label, *entry;
+    g_autoptr(GtkWidget) dialog = NULL;
     const char *txt;
     int retval;
 
@@ -174,13 +175,13 @@ static int ask_user(GtkWidget *parent, char *title, char *message,
         retval = -1;
         break;
     }
-    gtk_widget_destroy(dialog);
+    gtk_widget_destroy(g_steal_pointer(&dialog));
     return retval;
 }
 
 static void update_status_window(SpiceWindow *win)
 {
-    GString *status;
+    g_autoptr(GString) status = NULL;
 
     if (win == NULL)
         return;
@@ -192,13 +193,11 @@ static void update_status_window(SpiceWindow *win)
 
     if (win->mouse_grabbed) {
         SpiceGrabSequence *sequence = spice_display_get_grab_keys(SPICE_DISPLAY(win->spice));
-        gchar *seq = spice_grab_sequence_as_string(sequence);
+        g_autofree gchar *seq = spice_grab_sequence_as_string(sequence);
         g_string_append_printf(status, "\tUse %s to ungrab mouse", seq);
-        g_free(seq);
     }
 
     gtk_label_set_text(GTK_LABEL(win->status), status->str);
-    g_string_free(status, TRUE);
 }
 
 static void update_status(struct spice_connection *conn)
@@ -379,7 +378,8 @@ static void remove_cb(GtkContainer *container, GtkWidget *widget, void *data)
 
 static void menu_cb_select_usb_devices(GtkAction *action, void *data)
 {
-    GtkWidget *dialog, *area, *usb_device_widget;
+    GtkWidget *area, *usb_device_widget;
+    g_autoptr(GtkWidget) dialog = NULL;
     SpiceWindow *win = data;
 
     /* Create the widgets */
@@ -408,7 +408,7 @@ static void menu_cb_select_usb_devices(GtkAction *action, void *data)
     /* show and run */
     gtk_widget_show_all(dialog);
     gtk_dialog_run(GTK_DIALOG(dialog));
-    gtk_widget_destroy(dialog);
+    gtk_widget_destroy(g_steal_pointer(&dialog));
 }
 #endif
 
@@ -571,7 +571,7 @@ static void menu_cb_resize_to(GtkAction *action G_GNUC_UNUSED,
                               gpointer data)
 {
     SpiceWindow *win = data;
-    GtkWidget *dialog;
+    g_autoptr(GtkWidget) dialog = NULL;
     GtkWidget *spin_width, *spin_height, *spin_x, *spin_y;
     GtkGrid *grid;
     gint width, height;
@@ -624,23 +624,22 @@ static void menu_cb_resize_to(GtkAction *action G_GNUC_UNUSED,
             TRUE);
         spice_main_channel_send_monitor_config(win->conn->main);
     }
-    gtk_widget_destroy(dialog);
+    gtk_widget_destroy(g_steal_pointer(&dialog));
 }
 
 static void restore_configuration(SpiceWindow *win)
 {
     gboolean state;
-    gchar *str;
-    gchar **keys = NULL;
+    g_autofree gchar *str = NULL;
+    g_auto(GStrv) keys = NULL;
     gsize nkeys, i;
-    GError *error = NULL;
+    g_autoptr(GError) error = NULL;
     gpointer object;
 
     keys = g_key_file_get_keys(keyfile, "general", &nkeys, &error);
     if (error != NULL) {
         if (error->code != G_KEY_FILE_ERROR_GROUP_NOT_FOUND)
             g_warning("Failed to read configuration file keys: %s", error->message);
-        g_clear_error(&error);
         return;
     }
 
@@ -664,17 +663,11 @@ static void restore_configuration(SpiceWindow *win)
         g_object_set(object, keys[i], state, NULL);
     }
 
-    g_strfreev(keys);
-
     str = g_key_file_get_string(keyfile, "general", "grab-sequence", &error);
     if (error == NULL) {
-        SpiceGrabSequence *seq = spice_grab_sequence_new_from_string(str);
+        g_autoptr(SpiceGrabSequence) seq = spice_grab_sequence_new_from_string(str);
         spice_display_set_grab_keys(SPICE_DISPLAY(win->spice), seq);
-        spice_grab_sequence_free(seq);
-        g_free(str);
     }
-    g_clear_error(&error);
-
 
     state = g_key_file_get_boolean(keyfile, "ui", "toolbar", &error);
     if (error == NULL)
@@ -684,7 +677,6 @@ static void restore_configuration(SpiceWindow *win)
     state = g_key_file_get_boolean(keyfile, "ui", "statusbar", &error);
     if (error == NULL)
         gtk_widget_set_visible(win->statusbar, state);
-    g_clear_error(&error);
 }
 
 /* ------------------------------------------------------------------ */
@@ -991,7 +983,7 @@ static gboolean is_gtk_session_property(const gchar *property)
 
 static void recent_item_activated_cb(GtkRecentChooser *chooser, gpointer data)
 {
-    GtkRecentInfo *info;
+    g_autoptr(GtkRecentInfo) info = NULL;
     struct spice_connection *conn;
     const char *uri;
 
@@ -1002,7 +994,6 @@ static void recent_item_activated_cb(GtkRecentChooser *chooser, gpointer data)
 
     conn = connection_new();
     g_object_set(conn->session, "uri", uri, NULL);
-    gtk_recent_info_unref(info);
     connection_connect(conn);
 }
 
@@ -1021,7 +1012,7 @@ static void video_codec_type_cb(GtkRadioAction *action G_GNUC_UNUSED,
     static GArray *preferred_codecs = NULL;
     gint selected_codec = gtk_radio_action_get_current_value(current);
     guint i;
-    GError *err = NULL;
+    g_autoptr(GError) err = NULL;
 
     if (!preferred_codecs) {
         preferred_codecs = g_array_sized_new(FALSE, FALSE,
@@ -1045,7 +1036,6 @@ static void video_codec_type_cb(GtkRadioAction *action G_GNUC_UNUSED,
                                                                   (gint *) preferred_codecs->data,
                                                                   preferred_codecs->len, &err)) {
         g_warning("setting preferred video codecs failed: %s", err->message);
-        g_error_free(err);
     }
 }
 
@@ -1066,9 +1056,9 @@ static SpiceWindow *create_spice_window(spice_connection *conn, SpiceChannel *ch
     GtkAction *toggle;
     gboolean state;
     GtkWidget *vbox, *frame;
-    GError *err = NULL;
+    g_autoptr(GError) err = NULL;
     int i;
-    SpiceGrabSequence *seq;
+    g_autoptr(SpiceGrabSequence) seq = NULL;
 
     win = g_object_new(SPICE_TYPE_WINDOW, NULL);
     win->id = id;
@@ -1120,7 +1110,6 @@ static SpiceWindow *create_spice_window(spice_connection *conn, SpiceChannel *ch
     err = NULL;
     if (!gtk_ui_manager_add_ui_from_string(win->ui, ui_xml, -1, &err)) {
         g_warning("building menus failed: %s", err->message);
-        g_error_free(err);
         exit(1);
     }
     if (!hide_menu_bar) {
@@ -1148,7 +1137,6 @@ static SpiceWindow *create_spice_window(spice_connection *conn, SpiceChannel *ch
     win->spice = GTK_WIDGET(spice_display_new_with_monitor(conn->session, id, monitor_id));
     seq = spice_grab_sequence_new_from_string("Shift_L+F12");
     spice_display_set_grab_keys(SPICE_DISPLAY(win->spice), seq);
-    spice_grab_sequence_free(seq);
 
     g_signal_connect(G_OBJECT(win->spice), "mouse-grab",
                      G_CALLBACK(mouse_grab_cb), win);
@@ -1278,7 +1266,7 @@ static void recent_add(SpiceSession *session)
         .app_name     = (char*)"spicy",
         .app_exec     = (char*)"spicy --uri=%u",
     };
-    char *uri;
+    g_autofree char *uri = NULL;
 
     g_object_get(session, "uri", &uri, NULL);
     SPICE_DEBUG("%s: %s", __FUNCTION__, uri);
@@ -1293,8 +1281,6 @@ static void recent_add(SpiceSession *session)
 
     if (!gtk_recent_manager_add_full(recent, uri, &meta))
         g_warning("Recent item couldn't be added successfully");
-
-    g_free(uri);
 }
 
 static void main_channel_event(SpiceChannel *channel, SpiceChannelEvent event,
@@ -1560,7 +1546,7 @@ static void port_opened(SpiceChannel *channel, GParamSpec *pspec,
                         spice_connection *conn)
 {
     SpicePortChannel *port = SPICE_PORT_CHANNEL(channel);
-    gchar *name = NULL;
+    g_autofree char *name = NULL;
     gboolean opened = FALSE;
 
     g_object_get(channel,
@@ -1586,8 +1572,6 @@ static void port_opened(SpiceChannel *channel, GParamSpec *pspec,
         if (port == stdin_port)
             stdin_port = NULL;
     }
-
-    g_free(name);
 }
 
 static void port_data(SpicePortChannel *port,
@@ -1670,7 +1654,7 @@ task_cancel_cb(GtkButton *button,
 static TransferTaskWidgets *
 transfer_task_widgets_new(SpiceFileTransferTask *task)
 {
-    char *filename;
+    g_autofree char *filename = NULL;
     TransferTaskWidgets *widgets = g_new0(TransferTaskWidgets, 1);
 
     widgets->vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -1680,7 +1664,6 @@ transfer_task_widgets_new(SpiceFileTransferTask *task)
     widgets->progress = gtk_progress_bar_new();
     filename = spice_file_transfer_task_get_filename(task);
     widgets->label = gtk_label_new(filename);
-    g_free(filename);
 
     gtk_widget_set_halign(widgets->label, GTK_ALIGN_START);
     gtk_widget_set_valign(widgets->label, GTK_ALIGN_BASELINE);
@@ -1954,18 +1937,16 @@ static void usb_connect_failed(GObject               *object,
                                GError                *error,
                                gpointer               data)
 {
-    GtkWidget *dialog;
-
     if (error->domain == G_IO_ERROR && error->code == G_IO_ERROR_CANCELLED)
         return;
 
-    dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR,
+    g_autoptr(GtkWidget) dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR,
                                     GTK_BUTTONS_CLOSE,
                                     "USB redirection error");
     gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog),
                                              "%s", error->message);
     gtk_dialog_run(GTK_DIALOG(dialog));
-    gtk_widget_destroy(dialog);
+    gtk_widget_destroy(g_steal_pointer(&dialog));
 }
 
 static void setup_terminal(gboolean reset)
@@ -2009,10 +1990,11 @@ static void watch_stdin(void)
 int main(int argc, char *argv[])
 {
     GError *error = NULL;
-    GOptionContext *context;
+    g_autoptr(GOptionContext) context = NULL;
     spice_connection *conn;
-    gchar *conf_file, *conf;
-    char *host = NULL, *port = NULL, *tls_port = NULL, *unix_path = NULL;
+    g_autofree gchar *conf_file = NULL;
+    g_autofree gchar *conf = NULL;
+    g_autofree char *host = NULL, *port = NULL, *tls_port = NULL, *unix_path = NULL;
 
     keyfile = g_key_file_new();
 
@@ -2043,8 +2025,6 @@ int main(int argc, char *argv[])
         g_print("option parsing failed: %s\n", error->message);
         exit(1);
     }
-    g_option_context_free(context);
-
     if (version) {
         g_print("spicy " PACKAGE_VERSION "\n");
         exit(0);
@@ -2069,10 +2049,6 @@ int main(int argc, char *argv[])
             exit(0);
         }
     }
-    g_free(host);
-    g_free(port);
-    g_free(tls_port);
-    g_free(unix_path);
 
     connection_connect(conn);
     if (connections > 0)
@@ -2085,8 +2061,6 @@ int main(int argc, char *argv[])
         g_clear_error(&error);
     }
 
-    g_free(conf_file);
-    g_free(conf);
     g_key_file_free(keyfile);
 
     g_free(spicy_title);
