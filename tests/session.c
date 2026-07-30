@@ -14,7 +14,7 @@ typedef struct {
 
 static void test_session_uri_bad(void)
 {
-    SpiceSession *s;
+    g_autoptr(SpiceSession) s = NULL;
     guint i;
     const struct {
         const gchar *uri;
@@ -136,7 +136,7 @@ static void test_session_uri_bad(void)
     s = spice_session_new();
 
     for (i = 0; i < G_N_ELEMENTS(uris); i++) {
-        gchar *uri = NULL;
+        g_autofree gchar *uri = NULL;
         guint j;
         for (j = 0; j < G_N_ELEMENTS(uris[i].messages) && uris[i].messages[j].message != NULL; j++)
             g_test_expect_message(G_LOG_DOMAIN,
@@ -146,22 +146,19 @@ static void test_session_uri_bad(void)
         g_object_get(s, "uri", &uri, NULL);
         g_test_assert_expected_messages();
         g_assert_cmpstr(uri, ==, NULL);
-        g_free(uri);
     }
-
-    g_object_unref(s);
 }
 
 static void test_session_uri_good(const TestCase *tests, const guint cases)
 {
-    SpiceSession *s;
     guint i;
 
     /* Set URI and check URI, port and tls_port */
     for (i = 0; i < cases; i++) {
-        gchar *uri, *port, *tls_port, *host, *username, *password, *unix_path;
+        g_autofree gchar *uri = NULL, *port = NULL, *tls_port = NULL,
+            *host = NULL, *username = NULL, *password = NULL, *unix_path = NULL;
 
-        s = spice_session_new();
+        g_autoptr(SpiceSession) s = spice_session_new();
         if (tests[i].message != NULL)
             g_test_expect_message(G_LOG_DOMAIN, G_LOG_LEVEL_WARNING, tests[i].message);
         g_object_set(s, "uri", tests[i].uri_input, NULL);
@@ -182,21 +179,13 @@ static void test_session_uri_good(const TestCase *tests, const guint cases)
         g_assert_cmpstr(tests[i].password, ==, password);
         g_test_assert_expected_messages();
         g_assert_cmpstr(tests[i].unix_path, ==, unix_path);
-        g_clear_pointer(&uri, g_free);
-        g_clear_pointer(&port, g_free);
-        g_clear_pointer(&tls_port, g_free);
-        g_clear_pointer(&host, g_free);
-        g_clear_pointer(&username, g_free);
-        g_clear_pointer(&password, g_free);
-        g_clear_pointer(&unix_path, g_free);
-        g_object_unref(s);
     }
 
     /* Set port and tls_port, check URI */
     for (i = 0; i < cases; i++) {
-        gchar *uri;
+        g_autofree gchar *uri = NULL;
 
-        s = spice_session_new();
+        g_autoptr(SpiceSession) s = spice_session_new();
         g_object_set(s,
                      "port", tests[i].port,
                      "tls-port", tests[i].tls_port,
@@ -207,8 +196,6 @@ static void test_session_uri_good(const TestCase *tests, const guint cases)
                       NULL);
         g_object_get(s, "uri", &uri, NULL);
         g_assert_cmpstr(tests[i].uri_output ?: tests[i].uri_input, ==, uri);
-        g_clear_pointer(&uri, g_free);
-        g_object_unref(s);
     }
 }
 
