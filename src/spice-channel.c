@@ -47,6 +47,21 @@
 
 #include "gio-coroutine.h"
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(BIO, BIO_free)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(EVP_PKEY, EVP_PKEY_free)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(SpiceMsgIn, spice_msg_in_unref)
+#if OPENSSL_VERSION_NUMBER >= 0x30000000
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(EVP_PKEY_CTX, EVP_PKEY_CTX_free)
+#endif
+
+static void
+sk_X509_INFO_pop_free_all(STACK_OF(X509_INFO) *inf)
+{
+    sk_X509_INFO_pop_free(inf, X509_INFO_free);
+}
+typedef STACK_OF(X509_INFO) STACK_OF_X509_INFO;
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(STACK_OF_X509_INFO, sk_X509_INFO_pop_free_all)
+
 G_STATIC_ASSERT(sizeof(SpiceChannelClass) == sizeof(GObjectClass) + 19 * sizeof(gpointer));
 
 static void spice_channel_handle_msg(SpiceChannel *channel, SpiceMsgIn *msg);
@@ -1195,14 +1210,14 @@ static void spice_channel_failed_spice_authentication(SpiceChannel *channel,
 static SpiceChannelEvent spice_channel_send_spice_ticket(SpiceChannel *channel)
 {
     SpiceChannelPrivate *c = channel->priv;
-    EVP_PKEY *pubkey = NULL;
+    g_autoptr(EVP_PKEY) pubkey = NULL;
     size_t nRSASize;
-    BIO *bioKey = NULL;
-    char *password = NULL;
+    g_autoptr(BIO) bioKey = NULL;
+    g_autofree char *password = NULL;
     uint8_t *encrypted = NULL;
     SpiceChannelEvent ret = SPICE_CHANNEL_ERROR_LINK;
 #if OPENSSL_VERSION_NUMBER >= 0x30000000
-    EVP_PKEY_CTX *ctx = NULL;
+    g_autoptr(EVP_PKEY_CTX) ctx = NULL;
 #else
     RSA *rsa = NULL;
     int rc;
@@ -1272,18 +1287,6 @@ cleanup:
     if (encrypted) {
         memset(encrypted, 0, nRSASize);
     }
-    if (pubkey) {
-        EVP_PKEY_free(pubkey);
-    }
-#if OPENSSL_VERSION_NUMBER >= 0x30000000
-    if (ctx) {
-        EVP_PKEY_CTX_free(ctx);
-    }
-#endif
-    if (bioKey) {
-        BIO_free(bioKey);
-    }
-    g_free(password);
     return ret;
 }
 
@@ -1337,7 +1340,8 @@ void spice_channel_up(SpiceChannel *channel)
 static void spice_channel_send_link(SpiceChannel *channel)
 {
     SpiceChannelPrivate *c = channel->priv;
-    uint8_t *buffer, *p;
+    g_autofree uint8_t *buffer = NULL;
+    uint8_t *p;
     uint32_t *caps;
     int protocol, i;
     SpiceLinkMess link_msg;
@@ -1398,7 +1402,6 @@ static void spice_channel_send_link(SpiceChannel *channel)
                   c->common_caps->len,
                   c->caps->len);
     spice_channel_write(channel, buffer, p - buffer);
-    g_free(buffer);
 }
 
 /* coroutine context */
@@ -1578,10 +1581,11 @@ static gboolean spice_channel_perform_auth_sasl(SpiceChannel *channel)
     sasl_conn_t *saslconn = NULL;
     sasl_security_properties_t secprops;
     const char *clientout;
-    char *serverin = NULL;
+    g_autofree char *serverin = NULL;
     unsigned int clientoutlen;
     int err;
-    char *localAddr = NULL, *remoteAddr = NULL;
+    g_autofree char *localAddr = NULL;
+    g_autofree char *remoteAddr = NULL;
     const void *val;
     sasl_ssf_t ssf;
     static const sasl_callback_t saslcb[] = {
@@ -1592,7 +1596,7 @@ static gboolean spice_channel_perform_auth_sasl(SpiceChannel *channel)
     };
     sasl_interact_t *interact = NULL;
     guint32 len;
-    char *mechlist = NULL;
+    g_autofree char *mechlist = NULL;
     const char *mechname;
     gboolean ret = FALSE;
     GSocketAddress *addr = NULL;
@@ -1901,10 +1905,6 @@ error:
     ret = FALSE;
 
 cleanup:
-    g_free(localAddr);
-    g_free(remoteAddr);
-    g_free(mechlist);
-    g_free(serverin);
     g_clear_object(&addr);
     return ret;
 }
@@ -2065,7 +2065,7 @@ void spice_channel_recv_msg(SpiceChannel *channel,
                             handler_msg_in msg_handler, gpointer data)
 {
     SpiceChannelPrivate *c = channel->priv;
-    SpiceMsgIn *in;
+    g_autoptr(SpiceMsgIn) in = NULL;
     int msg_size;
     int msg_type;
     int sub_list_offset = 0;
@@ -2094,13 +2094,12 @@ void spice_channel_recv_msg(SpiceChannel *channel,
     if (msg_type == SPICE_MSG_LIST || sub_list_offset) {
         SpiceSubMessageList *sub_list;
         SpiceSubMessage *sub;
-        SpiceMsgIn *sub_in;
         int i;
 
         sub_list = (SpiceSubMessageList *)(in->data + sub_list_offset);
         for (i = 0; i < sub_list->size; i++) {
             sub = (SpiceSubMessage *)(in->data + sub_list->sub_messages[i]);
-            sub_in = spice_msg_in_sub_new(channel, in, sub);
+            g_autoptr(SpiceMsgIn) sub_in = spice_msg_in_sub_new(channel, in, sub);
             sub_in->parsed = c->parser(sub_in->data, sub_in->data + sub_in->dpos,
                                        spice_header_get_msg_type(sub_in->header,
                                                                  c->use_mini_header),
@@ -2112,7 +2111,6 @@ void spice_channel_recv_msg(SpiceChannel *channel,
                 goto end;
             }
             msg_handler(channel, sub_in, data);
-            spice_msg_in_unref(sub_in);
         }
     }
 
@@ -2148,7 +2146,6 @@ end:
      * to c->in_serial (the server can sometimes skip serials) */
     c->last_message_serial = spice_header_get_in_msg_serial(in);
     c->in_serial++;
-    spice_msg_in_unref(in);
 }
 
 static const char *to_string[] = {
@@ -2448,7 +2445,7 @@ static gboolean spice_channel_iterate(SpiceChannel *channel)
  * unref the object since the coroutine's state is part of the object */
 static void spice_channel_delayed_unref(gpointer data)
 {
-    SpiceChannel *channel = SPICE_CHANNEL(data);
+    g_autoptr(SpiceChannel) channel = SPICE_CHANNEL(data);
     SpiceChannelPrivate *c = channel->priv;
     gboolean was_ready = c->state == SPICE_CHANNEL_STATE_READY;
 
@@ -2466,8 +2463,6 @@ static void spice_channel_delayed_unref(gpointer data)
 
     if (was_ready)
         g_coroutine_signal_emit(channel, signals[SPICE_CHANNEL_EVENT], 0, SPICE_CHANNEL_CLOSED);
-
-    g_object_unref(channel);
 }
 
 static int spice_channel_load_ca(SpiceChannel *channel)
@@ -2487,14 +2482,12 @@ static int spice_channel_load_ca(SpiceChannel *channel)
     CHANNEL_DEBUG(channel, "Load CA, file: %s, data: %p", ca_file, ca);
 
     if (ca != NULL) {
-        STACK_OF(X509_INFO) *inf;
+        g_autoptr(STACK_OF_X509_INFO) inf = NULL;
         X509_STORE *store;
-        BIO *in;
 
         store = SSL_CTX_get_cert_store(c->ctx);
-        in = BIO_new_mem_buf(ca, size);
+        g_autoptr(BIO) in = BIO_new_mem_buf(ca, size);
         inf = PEM_X509_INFO_read_bio(in, NULL, NULL, NULL);
-        BIO_free(in);
 
         for (i = 0; i < sk_X509_INFO_num(inf); i++) {
             X509_INFO *itmp;
@@ -2509,7 +2502,6 @@ static int spice_channel_load_ca(SpiceChannel *channel)
             }
         }
 
-        sk_X509_INFO_pop_free(inf, X509_INFO_free);
     }
 
     if (ca_file != NULL) {
@@ -2563,7 +2555,7 @@ const GError* spice_channel_get_error(SpiceChannel *self)
 /* coroutine context */
 static void *spice_channel_coroutine(void *data)
 {
-    SpiceChannel *channel = SPICE_CHANNEL(data);
+    g_autoptr(SpiceChannel) channel = SPICE_CHANNEL(data);
     SpiceChannelPrivate *c = channel->priv;
     guint verify;
     int rc, delay_val = 1;
@@ -2674,12 +2666,9 @@ reconnect:
 #if OPENSSL_VERSION_NUMBER >= 0x0090806fL && !defined(OPENSSL_NO_TLSEXT)
         {
             const char *hostname = spice_session_get_host(c->session);
-            // check is not an ip address
-            GInetAddress * ip = g_inet_address_new_from_string(hostname);
+            g_autoptr(GInetAddress) ip = g_inet_address_new_from_string(hostname);
             if (ip == NULL) {
                 SSL_set_tlsext_host_name(c->ssl, hostname);
-            } else {
-                g_object_unref(ip);
             }
         }
 #endif
@@ -2734,16 +2723,14 @@ cleanup:
         c->state == SPICE_CHANNEL_STATE_SWITCHING) {
         g_warn_if_fail(c->event == SPICE_CHANNEL_NONE);
         if (channel_connect(channel, c->tls)) {
-            g_object_unref(channel);
             return NULL;
         }
 
         c->event = SPICE_CHANNEL_ERROR_CONNECT;
     }
 
-    G_GNUC_UNUSED guint idle_id = g_idle_add_once(spice_channel_delayed_unref, channel);
-    /* Co-routine exits now - the SpiceChannel object may no longer exist,
-       so don't do anything else now unless you like SEGVs */
+    G_GNUC_UNUSED guint idle_id = g_idle_add_once(spice_channel_delayed_unref, g_steal_pointer(&channel));
+
     return NULL;
 }
 
@@ -3170,7 +3157,7 @@ static void spice_channel_send_migration_handshake(SpiceChannel *channel)
 void spice_channel_flush_async(SpiceChannel *self, GCancellable *cancellable,
                                GAsyncReadyCallback callback, gpointer user_data)
 {
-    GTask *task;
+    g_autoptr(GTask) task = NULL;
     SpiceChannelPrivate *c;
     gboolean was_empty;
 
@@ -3193,11 +3180,10 @@ void spice_channel_flush_async(SpiceChannel *self, GCancellable *cancellable,
     g_mutex_unlock(&c->xmit_queue_lock);
     if (was_empty) {
         g_task_return_boolean(task, TRUE);
-        g_object_unref(task);
         return;
     }
 
-    c->flushing = g_slist_append(c->flushing, task);
+    c->flushing = g_slist_append(c->flushing, g_steal_pointer(&task));
 }
 
 /**
