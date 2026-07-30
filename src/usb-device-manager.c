@@ -395,8 +395,10 @@ static void spice_usb_device_manager_set_property(GObject       *gobject,
         priv->auto_conn_filter_rules = rules;
         priv->auto_conn_filter_rules_count = count;
 #endif
-        g_free(priv->auto_connect_filter);
-        priv->auto_connect_filter = g_strdup(filter);
+        if (g_set_str(&priv->auto_connect_filter, filter))
+            g_object_notify(gobject, "auto-connect-filter");
+        else
+            return;
 
 #if defined(G_OS_WIN32) && defined(USE_USBREDIR)
         _usbdk_hider_update(manager);
@@ -426,8 +428,8 @@ static void spice_usb_device_manager_set_property(GObject       *gobject,
         priv->redirect_on_connect_rules = rules;
         priv->redirect_on_connect_rules_count = count;
 #endif
-        g_free(priv->redirect_on_connect);
-        priv->redirect_on_connect = g_strdup(filter);
+        if (g_set_str(&priv->redirect_on_connect, filter))
+            g_object_notify(gobject, "redirect-on-connect");
         break;
     }
     default:

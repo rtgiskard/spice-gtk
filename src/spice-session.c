@@ -2626,10 +2626,8 @@ void spice_session_set_name(SpiceSession *session, const gchar *name)
 
     SpiceSessionPrivate *s = session->priv;
 
-    g_free(s->name);
-    s->name = g_strdup(name);
-
-    g_coroutine_object_notify(G_OBJECT(session), "name");
+    if (g_set_str(&s->name, name))
+        g_coroutine_object_notify(G_OBJECT(session), "name");
 }
 
 G_GNUC_INTERNAL
@@ -2689,8 +2687,10 @@ static void spice_session_set_shared_dir(SpiceSession *session, const gchar *dir
 
     SpiceSessionPrivate *s = session->priv;
 
-    g_free(s->shared_dir);
-    s->shared_dir = g_strdup(dir);
+    if (g_set_str(&s->shared_dir, dir))
+        g_object_notify(G_OBJECT(session), "shared-dir");
+    else
+        return;
 
 #ifdef HAVE_PHODAV_VIRTUAL
     if (s->webdav == NULL) {

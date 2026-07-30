@@ -243,9 +243,8 @@ void spice_uri_set_scheme(SpiceURI *self, const gchar *scheme)
 {
     g_return_if_fail(SPICE_IS_URI(self));
 
-    g_free(self->scheme);
-    self->scheme = g_strdup(scheme);
-    g_object_notify((GObject *)self, "scheme");
+    if (g_set_str(&self->scheme, scheme))
+        g_object_notify((GObject *)self, "scheme");
 }
 
 /**
@@ -276,9 +275,8 @@ void spice_uri_set_hostname(SpiceURI *self, const gchar *hostname)
 {
     g_return_if_fail(SPICE_IS_URI(self));
 
-    g_free(self->hostname);
-    self->hostname = g_strdup(hostname);
-    g_object_notify((GObject *)self, "hostname");
+    if (g_set_str(&self->hostname, hostname))
+        g_object_notify((GObject *)self, "hostname");
 }
 
 /**
@@ -490,9 +488,8 @@ void spice_uri_set_user(SpiceURI *self, const gchar *user)
 {
     g_return_if_fail(SPICE_IS_URI(self));
 
-    g_free(self->user);
-    self->user = g_strdup(user);
-    g_object_notify((GObject *)self, "user");
+    if (g_set_str(&self->user, user))
+        g_object_notify((GObject *)self, "user");
 }
 
 /**
@@ -522,7 +519,6 @@ void spice_uri_set_password(SpiceURI *self, const gchar *password)
 {
     g_return_if_fail(SPICE_IS_URI(self));
 
-    g_free(self->password);
-    self->password = g_strdup(password);
-    g_object_notify((GObject *)self, "password");
+    if (g_set_str(&self->password, password))
+        g_object_notify((GObject *)self, "password");
 }
