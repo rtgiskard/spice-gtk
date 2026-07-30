@@ -48,15 +48,6 @@ G_DEFINE_TYPE_WITH_PRIVATE(SpiceDesktopIntegration, spice_desktop_integration, G
 /* ------------------------------------------------------------------ */
 /* Gnome specific code                                                */
 #ifdef WITH_GNOME
-static void handle_dbus_call_error(const char *call, GError **_error)
-{
-    GError *error = *_error;
-    const char *message = error->message;
-
-    g_warning("Error calling '%s': %s", call, message);
-    g_clear_error(_error);
-}
-
 static gboolean gnome_integration_init(SpiceDesktopIntegration *self)
 {
     SpiceDesktopIntegrationPrivate *priv = self->priv;
@@ -93,7 +84,7 @@ static gboolean gnome_integration_init(SpiceDesktopIntegration *self)
 static void gnome_integration_inhibit_automount(SpiceDesktopIntegration *self)
 {
     SpiceDesktopIntegrationPrivate *priv = self->priv;
-    GError *error = NULL;
+    g_autoptr(GError) error = NULL;
     const gchar *reason =
         _("Automounting has been inhibited for USB auto-redirecting");
 
@@ -102,27 +93,26 @@ static void gnome_integration_inhibit_automount(SpiceDesktopIntegration *self)
 
     g_return_if_fail(priv->gnome_automount_inhibit_cookie == 0);
 
-    GVariant *v = g_dbus_proxy_call_sync(priv->gnome_session_proxy,
-                "Inhibit",
-                g_variant_new("(susu)",
-                              g_get_prgname(),
-                              0,
-                              reason,
-                              GNOME_SESSION_INHIBIT_AUTOMOUNT),
-                G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
-    if (v)
-        g_variant_get(v, "(u)", &priv->gnome_automount_inhibit_cookie);
+    g_autoptr(GVariant) v = g_dbus_proxy_call_sync(priv->gnome_session_proxy,
+        "Inhibit",
+        g_variant_new("(susu)",
+            g_get_prgname(),
+            0,
+            reason,
+            GNOME_SESSION_INHIBIT_AUTOMOUNT),
+        G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+    if (!v) {
+        g_warning("Error calling 'org.gnome.SessionManager.Inhibit': %s", error->message);
+        return;
+    }
 
-    g_clear_pointer(&v, g_variant_unref);
-
-    if (error)
-        handle_dbus_call_error("org.gnome.SessionManager.Inhibit", &error);
+    g_variant_get(v, "(u)", &priv->gnome_automount_inhibit_cookie);
 }
 
 static void gnome_integration_uninhibit_automount(SpiceDesktopIntegration *self)
 {
     SpiceDesktopIntegrationPrivate *priv = self->priv;
-    GError *error = NULL;
+    g_autoptr(GError) error = NULL;
 
     if (!priv->gnome_session_proxy)
         return;
@@ -131,14 +121,15 @@ static void gnome_integration_uninhibit_automount(SpiceDesktopIntegration *self)
     if (priv->gnome_automount_inhibit_cookie == 0)
         return;
 
-    GVariant *v = g_dbus_proxy_call_sync(priv->gnome_session_proxy,
-                "Uninhibit",
-                g_variant_new("(u)",
-                              priv->gnome_automount_inhibit_cookie),
-                G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
-    g_clear_pointer(&v, g_variant_unref);
-    if (error)
-        handle_dbus_call_error("org.gnome.SessionManager.Uninhibit", &error);
+    g_autoptr(GVariant) v = g_dbus_proxy_call_sync(priv->gnome_session_proxy,
+        "Uninhibit",
+        g_variant_new("(u)",
+            priv->gnome_automount_inhibit_cookie),
+        G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+    if (!v) {
+        g_warning("Error calling 'org.gnome.SessionManager.Uninhibit': %s", error->message);
+        return;
+    }
 
     priv->gnome_automount_inhibit_cookie = 0;
 }

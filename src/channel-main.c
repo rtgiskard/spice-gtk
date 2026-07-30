@@ -1839,7 +1839,7 @@ static void file_xfer_data_flushed_cb(GObject *source_object,
 
     file_xfer_flush_finish(xfer_task, res, &error);
     if (error) {
-        spice_file_transfer_task_completed(xfer_task, error);
+        spice_file_transfer_task_completed(xfer_task, g_steal_pointer(&error));
         return;
     }
 
@@ -1887,7 +1887,7 @@ static void file_xfer_read_async_cb(GObject *source_object,
     count = spice_file_transfer_task_read_finish(xfer_task, res, &buffer, &error);
     if (count < 0) {
         spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
-        spice_file_transfer_task_completed(xfer_task, error);
+        spice_file_transfer_task_completed(xfer_task, g_steal_pointer(&error));
         return;
     }
 
@@ -3237,7 +3237,7 @@ static void file_xfer_init_task_async_cb(GObject *obj, GAsyncResult *res, gpoint
 
 failed:
     g_clear_object(&info);
-    spice_file_transfer_task_completed(xfer_task, error);
+    spice_file_transfer_task_completed(xfer_task, g_steal_pointer(&error));
 }
 
 static void file_transfer_operation_free(FileTransferOperation *xfer_op)

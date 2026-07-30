@@ -114,11 +114,13 @@ static void _channel_reset_cb(GObject *gobject,
     SpiceChannel *spice_channel =  SPICE_CHANNEL(gobject);
     SpiceUsbredirChannel *channel = SPICE_USBREDIR_CHANNEL(spice_channel);
     gboolean migrating = GPOINTER_TO_UINT(user_data);
-    GError *err = NULL;
+    g_autoptr(GError) err = NULL;
 
     _channel_reset_finish(channel, migrating);
 
-    spice_usbredir_channel_disconnect_device_finish(channel, result, &err);
+    if (!spice_usbredir_channel_disconnect_device_finish(channel, result, &err)) {
+        g_warning("Failed to disconnect device: %s", err->message);
+    }
 }
 
 static void spice_usbredir_channel_reset(SpiceChannel *c, gboolean migrating)
@@ -137,7 +139,7 @@ static void spice_usbredir_channel_reset(SpiceChannel *c, gboolean migrating)
      * problems such as https://bugzilla.redhat.com/show_bug.cgi?id=1625550
      * No operation from here on should rely on SpiceChannel as its coroutine
      * might be terminated. */
-    
+
     if (priv->state == STATE_CONNECTED) {
         /* FIXME: We should chain-up parent's channel-reset here */
         spice_usbredir_channel_disconnect_device_async(channel, NULL,

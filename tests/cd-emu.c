@@ -63,7 +63,7 @@ static void multiple(const void *param)
 {
     guint limit = GPOINTER_TO_UINT(param);
     CdEmulationParams params = { "test-cd-emu.iso", 1 };
-    GError *err = NULL;
+    g_autoptr(GError) err = NULL;
     SpiceUsbBackend * be = spice_usb_backend_new(&err);
     g_assert_nonnull(be);
     g_assert_null(err);
@@ -130,7 +130,7 @@ static void decrement_allocated(gpointer data G_GNUC_UNUSED, GObject *old_gobjec
 static void
 device_iteration(const int loop, const bool attach_on_connect)
 {
-    GError *err = NULL;
+    g_autoptr(GError) err = NULL;
     unsigned int hellos_expected, messages_expected;
 
     hellos_expected = hellos_sent;
@@ -224,7 +224,7 @@ static void attach(const void *param)
      * - spice_usb_backend_read_guest_data
      * - spice_usb_backend_channel_attach (if not redir on connect)
      */
-    GError *err = NULL;
+    g_autoptr(GError) err = NULL;
     SpiceUsbBackend * be = spice_usb_backend_new(&err);
     g_assert_nonnull(be);
     g_assert_null(err);
