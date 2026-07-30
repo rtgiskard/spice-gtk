@@ -61,16 +61,14 @@ struct _SpicePlaybackChannelPrivate {
 G_DEFINE_TYPE_WITH_PRIVATE(SpicePlaybackChannel, spice_playback_channel, SPICE_TYPE_CHANNEL)
 
 /* Properties */
-enum {
-    PROP_0,
-    PROP_NCHANNELS,
+typedef enum {
+    PROP_NCHANNELS = 1,
     PROP_VOLUME,
     PROP_MUTE,
     PROP_MIN_LATENCY,
-    N_PROPS
-};
+} SpicePlaybackChannelProps;
 
-static GParamSpec *props[N_PROPS] = { NULL, };
+static GParamSpec *props[PROP_MIN_LATENCY + 1] = { NULL, };
 
 /* Signals */
 enum {
@@ -125,7 +123,7 @@ static void spice_playback_channel_get_property(GObject    *gobject,
     SpicePlaybackChannel *channel = SPICE_PLAYBACK_CHANNEL(gobject);
     SpicePlaybackChannelPrivate *c = channel->priv;
 
-    switch (prop_id) {
+    switch ((SpicePlaybackChannelProps) prop_id) {
     case PROP_VOLUME:
         g_value_set_pointer(value, c->volume);
         break;
@@ -149,7 +147,7 @@ static void spice_playback_channel_set_property(GObject      *gobject,
                                                 const GValue *value,
                                                 GParamSpec   *pspec)
 {
-    switch (prop_id) {
+    switch ((SpicePlaybackChannelProps) prop_id) {
     case PROP_VOLUME:
         /* TODO: request guest volume change */
         break;
@@ -215,7 +213,7 @@ static void spice_playback_channel_class_init(SpicePlaybackChannelClass *klass)
                                                 G_PARAM_READABLE |
                                                 G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_properties(gobject_class, N_PROPS, props);
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
     /**
      * SpicePlaybackChannel::playback-start:
      * @channel: the #SpicePlaybackChannel that emitted the signal

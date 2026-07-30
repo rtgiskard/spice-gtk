@@ -78,17 +78,15 @@ struct _SpiceDisplayChannelPrivate {
 G_DEFINE_TYPE_WITH_PRIVATE(SpiceDisplayChannel, spice_display_channel, SPICE_TYPE_CHANNEL)
 
 /* Properties */
-enum {
-    PROP_0,
-    PROP_WIDTH,
+typedef enum {
+    PROP_WIDTH = 1,
     PROP_HEIGHT,
     PROP_MONITORS,
     PROP_MONITORS_MAX,
     PROP_GL_SCANOUT,
-    N_PROPS
-};
+} SpiceDisplayChannelProps;
 
-static GParamSpec *props[N_PROPS] = { NULL, };
+static GParamSpec *props[PROP_GL_SCANOUT + 1] = { NULL, };
 
 enum {
     SPICE_DISPLAY_PRIMARY_CREATE,
@@ -216,7 +214,7 @@ static void spice_display_get_property(GObject    *object,
     SpiceDisplayChannel *channel = SPICE_DISPLAY_CHANNEL(object);
     SpiceDisplayChannelPrivate *c = channel->priv;
 
-    switch (prop_id) {
+    switch ((SpiceDisplayChannelProps) prop_id) {
     case PROP_WIDTH: {
         g_value_set_uint(value, c->primary ? c->primary->width : 0);
         break;
@@ -248,7 +246,7 @@ static void spice_display_set_property(GObject      *object,
                                        const GValue *value,
                                        GParamSpec   *pspec)
 {
-    switch (prop_id) {
+    switch ((SpiceDisplayChannelProps) prop_id) {
     case PROP_WIDTH:
     case PROP_HEIGHT:
     case PROP_MONITORS:
@@ -344,7 +342,7 @@ static void spice_display_channel_class_init(SpiceDisplayChannelClass *klass)
                                                 G_PARAM_READABLE |
                                                 G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_properties(gobject_class, N_PROPS, props);
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 
     /**
      * SpiceDisplayChannel::display-primary-create:

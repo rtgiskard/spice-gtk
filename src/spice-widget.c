@@ -85,9 +85,8 @@
 G_DEFINE_TYPE_WITH_PRIVATE(SpiceDisplay, spice_display, GTK_TYPE_EVENT_BOX)
 
 /* Properties */
-enum {
-    PROP_0,
-    PROP_SESSION,
+typedef enum {
+    PROP_SESSION = 1,
     PROP_CHANNEL_ID,
     PROP_KEYBOARD_GRAB,
     PROP_MOUSE_GRAB,
@@ -99,10 +98,9 @@ enum {
     PROP_MONITOR_ID,
     PROP_KEYPRESS_DELAY,
     PROP_READY,
-    N_PROPS
-};
+} SpiceDisplayProps;
 
-static GParamSpec *props[N_PROPS] = { NULL, };
+static GParamSpec *props[PROP_READY + 1] = { NULL, };
 
 /* Signals */
 enum {
@@ -151,7 +149,7 @@ static void spice_display_get_property(GObject    *object,
     SpiceDisplay *display = SPICE_DISPLAY(object);
     SpiceDisplayPrivate *d = display->priv;
 
-    switch (prop_id) {
+    switch ((SpiceDisplayProps) prop_id) {
     case PROP_SESSION:
         g_value_set_object(value, d->session);
         break;
@@ -386,7 +384,7 @@ static void spice_display_set_property(GObject      *object,
     SpiceDisplay *display = SPICE_DISPLAY(object);
     SpiceDisplayPrivate *d = display->priv;
 
-    switch (prop_id) {
+    switch ((SpiceDisplayProps) prop_id) {
     case PROP_SESSION:
         g_warn_if_fail(d->session == NULL);
         d->session = g_value_dup_object(value);
@@ -2570,7 +2568,7 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
                                               G_PARAM_CONSTRUCT |
                                               G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_properties(gobject_class, N_PROPS, props);
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 
     /**
      * SpiceDisplay::mouse-grab:

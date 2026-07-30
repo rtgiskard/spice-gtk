@@ -116,17 +116,15 @@ static gboolean read_only(SpiceGtkSession *self);
 G_DEFINE_TYPE_WITH_PRIVATE(SpiceGtkSession, spice_gtk_session, G_TYPE_OBJECT)
 
 /* Properties */
-enum {
-    PROP_0,
-    PROP_SESSION,
+typedef enum {
+    PROP_SESSION = 1,
     PROP_AUTO_CLIPBOARD,
     PROP_AUTO_USBREDIR,
     PROP_POINTER_GRABBED,
     PROP_SYNC_MODIFIERS,
-    N_PROPS
-};
+} SpiceGtkSessionProps;
 
-static GParamSpec *props[N_PROPS] = { NULL, };
+static GParamSpec *props[PROP_SYNC_MODIFIERS + 1] = { NULL, };
 
 static guint32 get_keyboard_lock_modifiers(void)
 {
@@ -321,7 +319,7 @@ static void spice_gtk_session_get_property(GObject    *gobject,
     SpiceGtkSession *self = SPICE_GTK_SESSION(gobject);
     SpiceGtkSessionPrivate *s = self->priv;
 
-    switch (prop_id) {
+    switch ((SpiceGtkSessionProps) prop_id) {
     case PROP_SESSION:
         g_value_set_object(value, s->session);
 	break;
@@ -351,7 +349,7 @@ static void spice_gtk_session_set_property(GObject      *gobject,
     SpiceGtkSession *self = SPICE_GTK_SESSION(gobject);
     SpiceGtkSessionPrivate *s = self->priv;
 
-    switch (prop_id) {
+    switch ((SpiceGtkSessionProps) prop_id) {
     case PROP_SESSION:
         s->session = g_value_get_object(value);
         break;
@@ -485,7 +483,7 @@ static void spice_gtk_session_class_init(SpiceGtkSessionClass *klass)
                                                       G_PARAM_CONSTRUCT |
                                                       G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_properties(gobject_class, N_PROPS, props);
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 }
 
 /* ---------------------------------------------------------------- */

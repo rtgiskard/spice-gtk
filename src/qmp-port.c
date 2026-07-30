@@ -60,12 +60,10 @@ struct _SpiceQmpPortClass
     GObjectClass parent_class;
 };
 
-enum {
+typedef enum {
     PROP_CHANNEL = 1,
     PROP_READY,
-
-    PROP_LAST,
-};
+} SpiceQmpPortProps;
 
 enum {
     SIGNAL_EVENT,
@@ -74,7 +72,7 @@ enum {
 };
 
 static guint signals[SIGNAL_LAST];
-static GParamSpec *props[PROP_LAST] = { NULL, };
+static GParamSpec *props[PROP_READY + 1] = { NULL, };
 
 G_DEFINE_TYPE_WITH_PRIVATE(SpiceQmpPort, spice_qmp_port, G_TYPE_OBJECT)
 
@@ -244,7 +242,7 @@ spice_qmp_port_set_property(GObject *object,
 {
     SpiceQmpPort *self = SPICE_QMP_PORT(object);
 
-    switch (property_id) {
+    switch ((SpiceQmpPortProps) property_id) {
     case PROP_CHANNEL:
         g_clear_object(&self->priv->channel);
         self->priv->channel = g_value_dup_object(value);
@@ -267,7 +265,7 @@ spice_qmp_port_get_property(GObject *object,
 {
     SpiceQmpPort *self = SPICE_QMP_PORT(object);
 
-    switch (property_id) {
+    switch ((SpiceQmpPortProps) property_id) {
     case PROP_CHANNEL:
         g_value_set_object(value, self->priv->channel);
         break;
@@ -324,7 +322,7 @@ static void spice_qmp_port_class_init(SpiceQmpPortClass *klass)
                              FALSE,
                              G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_properties(gobject_class, PROP_LAST, props);
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
  }
 
 static void

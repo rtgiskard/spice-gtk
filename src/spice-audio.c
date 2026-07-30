@@ -46,14 +46,12 @@ G_STATIC_ASSERT(sizeof(SpiceAudioClass) == sizeof(GObjectClass) + 11 * sizeof(gp
 
 G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE(SpiceAudio, spice_audio, G_TYPE_OBJECT)
 
-enum {
-    PROP_0,
-    PROP_SESSION,
+typedef enum {
+    PROP_SESSION = 1,
     PROP_MAIN_CONTEXT,
-    N_PROPS
-};
+} SpiceAudioProps;
 
-static GParamSpec *props[N_PROPS] = { NULL, };
+static GParamSpec *props[PROP_MAIN_CONTEXT + 1] = { NULL, };
 
 static void spice_audio_finalize(GObject *gobject)
 {
@@ -74,7 +72,7 @@ static void spice_audio_get_property(GObject *gobject,
     SpiceAudio *self = SPICE_AUDIO(gobject);
     SpiceAudioPrivate *priv = self->priv;
 
-    switch (prop_id) {
+    switch ((SpiceAudioProps) prop_id) {
     case PROP_SESSION:
         g_value_set_object(value, priv->session);
         break;
@@ -95,7 +93,7 @@ static void spice_audio_set_property(GObject *gobject,
     SpiceAudio *self = SPICE_AUDIO(gobject);
     SpiceAudioPrivate *priv = self->priv;
 
-    switch (prop_id) {
+    switch ((SpiceAudioProps) prop_id) {
     case PROP_SESSION:
         priv->session = g_value_get_object(value);
         break;
@@ -134,7 +132,7 @@ static void spice_audio_class_init(SpiceAudioClass *klass)
                                                   G_TYPE_MAIN_CONTEXT,
                                                   G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_properties(gobject_class, N_PROPS, props);
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 }
 
 static void spice_audio_init(SpiceAudio *self)

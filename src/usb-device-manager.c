@@ -69,17 +69,15 @@
 
 G_STATIC_ASSERT(sizeof(SpiceUsbDeviceManagerClass) == sizeof(GObjectClass) + 14 * sizeof(gpointer));
 
-enum {
-    PROP_0,
-    PROP_SESSION,
+typedef enum {
+    PROP_SESSION = 1,
     PROP_AUTO_CONNECT,
     PROP_AUTO_CONNECT_FILTER,
     PROP_REDIRECT_ON_CONNECT,
     PROP_FREE_CHANNELS,
-    N_PROPS
-};
+} SpiceUsbDeviceManagerProps;
 
-static GParamSpec *props[N_PROPS] = { NULL, };
+static GParamSpec *props[PROP_FREE_CHANNELS + 1] = { NULL, };
 
 enum
 {
@@ -326,7 +324,7 @@ static void spice_usb_device_manager_get_property(GObject     *gobject,
     SpiceUsbDeviceManager *manager = SPICE_USB_DEVICE_MANAGER(gobject);
     SpiceUsbDeviceManagerPrivate *priv = manager->priv;
 
-    switch (prop_id) {
+    switch ((SpiceUsbDeviceManagerProps) prop_id) {
     case PROP_SESSION:
         g_value_set_object(value, priv->session);
         break;
@@ -368,7 +366,7 @@ static void spice_usb_device_manager_set_property(GObject       *gobject,
     SpiceUsbDeviceManager *manager = SPICE_USB_DEVICE_MANAGER(gobject);
     SpiceUsbDeviceManagerPrivate *priv = manager->priv;
 
-    switch (prop_id) {
+    switch ((SpiceUsbDeviceManagerProps) prop_id) {
     case PROP_SESSION:
         priv->session = g_value_get_object(value);
         break;
@@ -534,7 +532,7 @@ static void spice_usb_device_manager_class_init(SpiceUsbDeviceManagerClass *klas
                                                  0,
                                                  G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_properties(gobject_class, N_PROPS, props);
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 
     /**
      * SpiceUsbDeviceManager::device-added:

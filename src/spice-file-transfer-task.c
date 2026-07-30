@@ -68,7 +68,7 @@ G_DEFINE_TYPE(SpiceFileTransferTask, spice_file_transfer_task, G_TYPE_OBJECT)
 
 #define FILE_XFER_CHUNK_SIZE (VD_AGENT_MAX_DATA_SIZE * 32)
 
-enum {
+typedef enum {
     PROP_TASK_ID = 1,
     PROP_TASK_CHANNEL,
     PROP_TASK_CANCELLABLE,
@@ -76,10 +76,9 @@ enum {
     PROP_TASK_TOTAL_BYTES,
     PROP_TASK_TRANSFERRED_BYTES,
     PROP_TASK_PROGRESS,
-    N_PROPS
-};
+} SpiceFileTransferTaskProps;
 
-static GParamSpec *props[N_PROPS] = { NULL, };
+static GParamSpec *props[PROP_TASK_PROGRESS + 1] = { NULL, };
 
 enum {
     SIGNAL_FINISHED,
@@ -594,7 +593,7 @@ spice_file_transfer_task_get_property(GObject *object,
 {
     SpiceFileTransferTask *self = SPICE_FILE_TRANSFER_TASK(object);
 
-    switch (property_id)
+    switch ((SpiceFileTransferTaskProps) property_id)
     {
         case PROP_TASK_ID:
             g_value_set_uint(value, self->id);
@@ -630,7 +629,7 @@ spice_file_transfer_task_set_property(GObject *object,
 {
     SpiceFileTransferTask *self = SPICE_FILE_TRANSFER_TASK(object);
 
-    switch (property_id)
+    switch ((SpiceFileTransferTaskProps) property_id)
     {
         case PROP_TASK_ID:
             self->id = g_value_get_uint(value);
@@ -808,7 +807,7 @@ spice_file_transfer_task_class_init(SpiceFileTransferTaskClass *klass)
                                                     G_PARAM_READABLE |
                                                     G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_properties(object_class, N_PROPS, props);
+    g_object_class_install_properties(object_class, G_N_ELEMENTS(props), props);
 
     /**
      * SpiceFileTransferTask::finished:

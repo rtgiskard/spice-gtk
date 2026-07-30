@@ -56,13 +56,11 @@ struct _SpiceCursorChannelPrivate {
 };
 
 /* Properties */
-enum {
-    PROP_0,
-    PROP_CURSOR,
-    N_PROPS
-};
+typedef enum {
+    PROP_CURSOR = 1,
+} SpiceCursorChannelProps;
 
-static GParamSpec *props[N_PROPS] = { NULL, };
+static GParamSpec *props[PROP_CURSOR + 1] = { NULL, };
 
 enum {
     SPICE_CURSOR_SET,
@@ -159,7 +157,7 @@ static void spice_cursor_channel_get_property(GObject    *object,
     SpiceCursorChannel *channel = SPICE_CURSOR_CHANNEL(object);
     SpiceCursorChannelPrivate *c = channel->priv;
 
-    switch (prop_id) {
+    switch ((SpiceCursorChannelProps) prop_id) {
     case PROP_CURSOR:
         g_value_set_static_boxed(value, c->last_cursor.data ? &c->last_cursor : NULL);
         break;
@@ -193,7 +191,7 @@ static void spice_cursor_channel_class_init(SpiceCursorChannelClass *klass)
                                             G_PARAM_READABLE |
                                             G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_properties(gobject_class, N_PROPS, props);
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
     /**
      * SpiceCursorChannel::cursor-set:
      * @cursor: the #SpiceCursorChannel that emitted the signal

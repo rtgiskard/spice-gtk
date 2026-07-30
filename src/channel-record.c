@@ -61,15 +61,13 @@ struct _SpiceRecordChannelPrivate {
 G_DEFINE_TYPE_WITH_PRIVATE(SpiceRecordChannel, spice_record_channel, SPICE_TYPE_CHANNEL)
 
 /* Properties */
-enum {
-    PROP_0,
-    PROP_NCHANNELS,
+typedef enum {
+    PROP_NCHANNELS = 1,
     PROP_VOLUME,
     PROP_MUTE,
-    N_PROPS
-};
+} SpiceRecordChannelProps;
 
-static GParamSpec *props[N_PROPS] = { NULL, };
+static GParamSpec *props[PROP_MUTE + 1] = { NULL, };
 
 /* Signals */
 enum {
@@ -122,7 +120,7 @@ static void spice_record_channel_get_property(GObject    *gobject,
     SpiceRecordChannel *channel = SPICE_RECORD_CHANNEL(gobject);
     SpiceRecordChannelPrivate *c = channel->priv;
 
-    switch (prop_id) {
+    switch ((SpiceRecordChannelProps) prop_id) {
     case PROP_VOLUME:
         g_value_set_pointer(value, c->volume);
         break;
@@ -143,7 +141,7 @@ static void spice_record_channel_set_property(GObject      *gobject,
                                               const GValue *value,
                                               GParamSpec   *pspec)
 {
-    switch (prop_id) {
+    switch ((SpiceRecordChannelProps) prop_id) {
     case PROP_VOLUME:
         /* TODO: request guest volume change */
         break;
@@ -203,7 +201,7 @@ static void spice_record_channel_class_init(SpiceRecordChannelClass *klass)
                                             G_PARAM_READWRITE |
                                             G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_properties(gobject_class, N_PROPS, props);
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
     /**
      * SpiceRecordChannel::record-start:
      * @channel: the #SpiceRecordChannel that emitted the signal

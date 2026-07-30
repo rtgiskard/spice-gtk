@@ -66,14 +66,12 @@ static void empty_cd_clicked_cb(GtkToggleButton *toggle, gpointer user_data);
 
 static gboolean spice_usb_device_widget_update_status(gpointer user_data);
 
-enum {
-    PROP_0,
-    PROP_SESSION,
+typedef enum {
+    PROP_SESSION = 1,
     PROP_DEVICE_FORMAT_STRING,
-    N_PROPS
-};
+} SpiceUsbDeviceWidgetProps;
 
-static GParamSpec *props[N_PROPS] = { NULL, };
+static GParamSpec *props[PROP_DEVICE_FORMAT_STRING + 1] = { NULL, };
 
 enum {
     CONNECT_FAILED,
@@ -103,7 +101,7 @@ static void spice_usb_device_widget_get_property(GObject *gobject,
     SpiceUsbDeviceWidget *self = SPICE_USB_DEVICE_WIDGET(gobject);
     SpiceUsbDeviceWidgetPrivate *priv = self->priv;
 
-    switch (prop_id) {
+    switch ((SpiceUsbDeviceWidgetProps) prop_id) {
     case PROP_SESSION:
         g_value_set_object(value, priv->session);
         break;
@@ -124,7 +122,7 @@ static void spice_usb_device_widget_set_property(GObject *gobject,
     SpiceUsbDeviceWidget *self = SPICE_USB_DEVICE_WIDGET(gobject);
     SpiceUsbDeviceWidgetPrivate *priv = self->priv;
 
-    switch (prop_id) {
+    switch ((SpiceUsbDeviceWidgetProps) prop_id) {
     case PROP_SESSION:
         priv->session = g_value_dup_object(value);
         break;
@@ -366,7 +364,7 @@ static void spice_usb_device_widget_class_init(SpiceUsbDeviceWidgetClass *klass)
                                                            G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
                                                            G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_properties(gobject_class, N_PROPS, props);
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 
     /**
      * SpiceUsbDeviceWidget::connect-failed:

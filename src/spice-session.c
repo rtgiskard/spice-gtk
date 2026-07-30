@@ -163,9 +163,8 @@ struct _SpiceSessionPrivate {
 G_DEFINE_TYPE_WITH_PRIVATE(SpiceSession, spice_session, G_TYPE_OBJECT)
 
 /* Properties */
-enum {
-    PROP_0,
-    PROP_HOST,
+typedef enum {
+    PROP_HOST = 1,
     PROP_PORT,
     PROP_TLS_PORT,
     PROP_PASSWORD,
@@ -201,10 +200,9 @@ enum {
     PROP_UNIX_PATH,
     PROP_PREF_COMPRESSION,
     PROP_GL_SCANOUT,
-    N_PROPS
-};
+} SpiceSessionProps;
 
-static GParamSpec *props[N_PROPS] = { NULL, };
+static GParamSpec *props[PROP_GL_SCANOUT + 1] = { NULL, };
 
 /* signals */
 enum {
@@ -609,7 +607,7 @@ static void spice_session_get_property(GObject    *gobject,
     SpiceSession *session = SPICE_SESSION(gobject);
     SpiceSessionPrivate *s = session->priv;
 
-    switch (prop_id) {
+    switch ((SpiceSessionProps) prop_id) {
     case PROP_HOST:
         g_value_set_string(value, s->host);
 	break;
@@ -733,7 +731,7 @@ static void spice_session_set_property(GObject      *gobject,
     SpiceSessionPrivate *s = session->priv;
     const char *str;
 
-    switch (prop_id) {
+    switch ((SpiceSessionProps) prop_id) {
     case PROP_HOST:
         g_free(s->host);
         s->host = g_value_dup_string(value);
@@ -1486,7 +1484,7 @@ static void spice_session_class_init(SpiceSessionClass *klass)
                                                   G_PARAM_READWRITE |
                                                   G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_properties(gobject_class, N_PROPS, props);
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 }
 
 G_GNUC_INTERNAL

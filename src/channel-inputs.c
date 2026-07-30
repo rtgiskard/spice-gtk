@@ -51,13 +51,11 @@ struct _SpiceInputsChannelPrivate {
 G_DEFINE_TYPE_WITH_PRIVATE(SpiceInputsChannel, spice_inputs_channel, SPICE_TYPE_CHANNEL)
 
 /* Properties */
-enum {
-    PROP_0,
-    PROP_KEY_MODIFIERS,
-    N_PROPS
-};
+typedef enum {
+    PROP_KEY_MODIFIERS = 1,
+} SpiceInputsChannelProps;
 
-static GParamSpec *props[N_PROPS] = { NULL, };
+static GParamSpec *props[PROP_KEY_MODIFIERS + 1] = { NULL, };
 
 /* Signals */
 enum {
@@ -86,7 +84,7 @@ static void spice_inputs_get_property(GObject    *object,
 {
     SpiceInputsChannelPrivate *c = SPICE_INPUTS_CHANNEL(object)->priv;
 
-    switch (prop_id) {
+    switch ((SpiceInputsChannelProps) prop_id) {
     case PROP_KEY_MODIFIERS:
         g_value_set_int(value, c->modifiers);
         break;
@@ -121,7 +119,7 @@ static void spice_inputs_channel_class_init(SpiceInputsChannelClass *klass)
                                                  G_PARAM_STATIC_NICK |
                                                  G_PARAM_STATIC_BLURB);
 
-    g_object_class_install_properties(gobject_class, N_PROPS, props);
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 
     /**
      * SpiceInputsChannel::inputs-modifiers:

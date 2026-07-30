@@ -138,9 +138,8 @@ struct spice_migrate {
 G_DEFINE_TYPE_WITH_PRIVATE(SpiceMainChannel, spice_main_channel, SPICE_TYPE_CHANNEL)
 
 /* Properties */
-enum {
-    PROP_0,
-    PROP_MOUSE_MODE,
+typedef enum {
+    PROP_MOUSE_MODE = 1,
     PROP_AGENT_CONNECTED,
     PROP_AGENT_CAPS_0,
     PROP_DISPLAY_DISABLE_WALLPAPER,
@@ -150,10 +149,9 @@ enum {
     PROP_DISABLE_DISPLAY_POSITION,
     PROP_DISABLE_DISPLAY_ALIGN,
     PROP_MAX_CLIPBOARD,
-    N_PROPS
-};
+} SpiceMainChannelProps;
 
-static GParamSpec *props[N_PROPS] = { NULL, };
+static GParamSpec *props[PROP_MAX_CLIPBOARD + 1] = { NULL, };
 
 /* Signals */
 enum {
@@ -288,7 +286,7 @@ static void spice_main_get_property(GObject    *object,
     SpiceMainChannel *self = SPICE_MAIN_CHANNEL(object);
     SpiceMainChannelPrivate *c = self->priv;
 
-    switch (prop_id) {
+    switch ((SpiceMainChannelProps) prop_id) {
     case PROP_MOUSE_MODE:
         g_value_set_int(value, c->mouse_mode);
         break;
@@ -331,7 +329,7 @@ static void spice_main_set_property(GObject *gobject, guint prop_id,
     SpiceMainChannel *self = SPICE_MAIN_CHANNEL(gobject);
     SpiceMainChannelPrivate *c = self->priv;
 
-    switch (prop_id) {
+    switch ((SpiceMainChannelProps) prop_id) {
     case PROP_DISPLAY_DISABLE_WALLPAPER:
         c->display_disable_wallpaper = g_value_get_boolean(value);
         break;
@@ -595,7 +593,7 @@ static void spice_main_channel_class_init(SpiceMainChannelClass *klass)
                                                  G_PARAM_CONSTRUCT |
                                                  G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_properties(gobject_class, N_PROPS, props);
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 
     /* TODO use notify instead */
     /**

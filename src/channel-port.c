@@ -59,14 +59,12 @@ struct _SpicePortChannelPrivate {
 G_DEFINE_TYPE_WITH_PRIVATE(SpicePortChannel, spice_port_channel, SPICE_TYPE_CHANNEL)
 
 /* Properties */
-enum {
-    PROP_0,
-    PROP_PORT_NAME,
+typedef enum {
+    PROP_PORT_NAME = 1,
     PROP_PORT_OPENED,
-    N_PROPS
-};
+} SpicePortChannelProps;
 
-static GParamSpec *props[N_PROPS] = { NULL, };
+static GParamSpec *props[PROP_PORT_OPENED + 1] = { NULL, };
 
 /* Signals */
 enum {
@@ -90,7 +88,7 @@ static void spice_port_get_property(GObject    *object,
 {
     SpicePortChannelPrivate *c = SPICE_PORT_CHANNEL(object)->priv;
 
-    switch (prop_id) {
+    switch ((SpicePortChannelProps) prop_id) {
     case PROP_PORT_NAME:
         g_value_set_string(value, c->name);
         break;
@@ -144,7 +142,7 @@ static void spice_port_channel_class_init(SpicePortChannelClass *klass)
                                                    FALSE,
                                                    G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_properties(gobject_class, N_PROPS, props);
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 
     /**
      * SpicePortChannel::port-data:

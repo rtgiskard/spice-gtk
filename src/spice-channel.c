@@ -85,17 +85,15 @@ G_DEFINE_TYPE_WITH_CODE (SpiceChannel, spice_channel, G_TYPE_OBJECT,
                          g_type_add_class_private (g_define_type_id, sizeof (SpiceChannelClassPrivate)))
 
 /* Properties */
-enum {
-    PROP_0,
-    PROP_SESSION,
+typedef enum {
+    PROP_SESSION = 1,
     PROP_CHANNEL_TYPE,
     PROP_CHANNEL_ID,
     PROP_TOTAL_READ_BYTES,
     PROP_SOCKET,
-    N_PROPS
-};
+} SpiceChannelProps;
 
-static GParamSpec *props[N_PROPS] = { NULL, };
+static GParamSpec *props[PROP_SOCKET + 1] = { NULL, };
 
 /* Signals */
 enum {
@@ -212,7 +210,7 @@ static void spice_channel_get_property(GObject    *gobject,
     SpiceChannel *channel = SPICE_CHANNEL(gobject);
     SpiceChannelPrivate *c = channel->priv;
 
-    switch (prop_id) {
+    switch ((SpiceChannelProps) prop_id) {
     case PROP_SESSION:
         g_value_set_object(value, c->session);
         break;
@@ -260,7 +258,7 @@ static void spice_channel_set_property(GObject      *gobject,
     SpiceChannel *channel = SPICE_CHANNEL(gobject);
     SpiceChannelPrivate *c = channel->priv;
 
-    switch (prop_id) {
+    switch ((SpiceChannelProps) prop_id) {
     case PROP_SESSION:
         c->session = g_value_dup_object(value);
         break;
@@ -343,7 +341,7 @@ static void spice_channel_class_init(SpiceChannelClass *klass)
                                              G_PARAM_READABLE |
                                              G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_properties(gobject_class, N_PROPS, props);
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 
     /**
      * SpiceChannel::channel-event:
