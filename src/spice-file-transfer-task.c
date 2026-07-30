@@ -608,6 +608,12 @@ spice_file_transfer_task_get_property(GObject *object,
         case PROP_TASK_PROGRESS:
             g_value_set_double(value, spice_file_transfer_task_get_progress(self));
             break;
+        case PROP_TASK_CHANNEL:
+            g_value_set_object(value, self->channel);
+            break;
+        case PROP_TASK_CANCELLABLE:
+            g_value_set_object(value, self->cancellable);
+            break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
     }

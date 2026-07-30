@@ -153,6 +153,10 @@ static void spice_playback_channel_set_property(GObject      *gobject,
     case PROP_MUTE:
         /* TODO: request guest mute change */
         break;
+    case PROP_MIN_LATENCY:
+    case PROP_NCHANNELS:
+        g_assert_not_reached();
+        break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
         break;
@@ -188,7 +192,7 @@ static void spice_playback_channel_class_init(SpicePlaybackChannelClass *klass)
                            "Number of Channels",
                            "Number of Channels",
                            0, G_MAXUINT8, 2,
-                           G_PARAM_READWRITE |
+                           G_PARAM_READABLE |
                            G_PARAM_STATIC_STRINGS));
 
     g_object_class_install_property
@@ -213,7 +217,7 @@ static void spice_playback_channel_class_init(SpicePlaybackChannelClass *klass)
                            "Playback min buffer size (ms)",
                            "Playback min buffer size (ms)",
                            0, G_MAXUINT32, SPICE_PLAYBACK_DEFAULT_LATENCY_MS,
-                           G_PARAM_READWRITE |
+                           G_PARAM_READABLE |
                            G_PARAM_STATIC_STRINGS));
     /**
      * SpicePlaybackChannel::playback-start:

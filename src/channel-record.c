@@ -147,6 +147,9 @@ static void spice_record_channel_set_property(GObject      *gobject,
     case PROP_MUTE:
         /* TODO: request guest mute change */
         break;
+    case PROP_NCHANNELS:
+        g_assert_not_reached();
+        break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
         break;
@@ -183,7 +186,7 @@ static void spice_record_channel_class_init(SpiceRecordChannelClass *klass)
                            "Number of Channels",
                            "Number of Channels",
                            0, G_MAXUINT8, 2,
-                           G_PARAM_READWRITE |
+                           G_PARAM_READABLE |
                            G_PARAM_STATIC_STRINGS));
 
     g_object_class_install_property
