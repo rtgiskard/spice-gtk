@@ -158,13 +158,12 @@ spice_qmp_handle_port_data(SpiceQmpPort *self, gpointer data,
 
     str = qmp->str;
     while ((crlf = strstr(str, "\r\n")) != NULL) {
-        GError *err = NULL;
+        g_autoptr(GError) err = NULL;
 
         *crlf = '\0';
         json_parser_load_from_data(self->priv->qmp_parser, str, crlf - str, &err);
         if (err) {
             g_warning("JSON parsing error: %s", err->message);
-            g_error_free(err);
         } else {
             if (!spice_qmp_dispatch_message(self))
                 g_warning("Failed to dispatch: %s", str);
@@ -331,13 +330,12 @@ spice_qmp_port_write_finished(GObject *source_object,
     GTask *task = G_TASK(t);
     SpiceQmpPort *self = g_task_get_source_object(task);
     gint id = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(task), "qmp-id"));
-    GError *err = NULL;
+    g_autoptr(GError) err = NULL;
 
     spice_port_channel_write_finish(port, res, &err);
     if (err) {
         g_hash_table_steal(self->priv->qmp_tasks, GINT_TO_POINTER(id));
         qmp_error_return(task, err->message);
-        g_error_free(err);
     }
 }
 
