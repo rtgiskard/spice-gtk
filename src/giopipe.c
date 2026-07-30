@@ -179,16 +179,13 @@ pipe_input_stream_close_async (GInputStream       *stream,
                                GAsyncReadyCallback  callback,
                                gpointer             data)
 {
-    GTask *task;
-
-    task = g_task_new (stream, cancellable, callback, data);
+    g_autoptr(GTask) task = g_task_new (stream, cancellable, callback, data);
     g_task_set_source_tag(task, pipe_input_stream_close_async);
 
     /* will always return TRUE */
     pipe_input_stream_close (stream, cancellable, NULL);
 
     g_task_return_boolean (task, TRUE);
-    g_object_unref (task);
 }
 
 static gboolean
@@ -370,16 +367,13 @@ pipe_output_stream_close_async (GOutputStream       *stream,
                                 GAsyncReadyCallback  callback,
                                 gpointer             data)
 {
-    GTask *task;
-
-    task = g_task_new (stream, cancellable, callback, data);
+    g_autoptr(GTask) task = g_task_new (stream, cancellable, callback, data);
     g_task_set_source_tag(task, pipe_output_stream_close_async);
 
     /* will always return TRUE */
     pipe_output_stream_close (stream, cancellable, NULL);
 
     g_task_return_boolean (task, TRUE);
-    g_object_unref (task);
 }
 
 static gboolean
