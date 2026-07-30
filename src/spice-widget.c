@@ -98,8 +98,11 @@ enum {
     PROP_ZOOM_LEVEL,
     PROP_MONITOR_ID,
     PROP_KEYPRESS_DELAY,
-    PROP_READY
+    PROP_READY,
+    N_PROPS
 };
+
+static GParamSpec *props[N_PROPS] = { NULL, };
 
 /* Signals */
 enum {
@@ -294,7 +297,7 @@ static void update_ready(SpiceDisplay *display)
         gtk_widget_queue_draw(GTK_WIDGET(display));
 
     d->ready = ready;
-    g_object_notify(G_OBJECT(display), "ready");
+    g_object_notify_by_pspec(G_OBJECT(display), props[PROP_READY]);
 }
 
 static void set_monitor_ready(SpiceDisplay *self, gboolean ready)
@@ -371,7 +374,7 @@ spice_display_set_keypress_delay(SpiceDisplay *display, guint delay)
     if (d->keypress_delay != delay) {
         DISPLAY_DEBUG(display, "keypress-delay is set to %u ms", delay);
         d->keypress_delay = delay;
-        g_object_notify(G_OBJECT(display), "keypress-delay");
+        g_object_notify_by_pspec(G_OBJECT(display), props[PROP_KEYPRESS_DELAY]);
     }
 }
 
@@ -2419,14 +2422,12 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
      * #SpiceSession for this #SpiceDisplay
      *
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_SESSION,
-         g_param_spec_object("session",
-                             "Session",
-                             "SpiceSession",
-                             SPICE_TYPE_SESSION,
-                             G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                             G_PARAM_STATIC_STRINGS));
+    props[PROP_SESSION] = g_param_spec_object("session",
+                                              "Session",
+                                              "SpiceSession",
+                                              SPICE_TYPE_SESSION,
+                                              G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
+                                              G_PARAM_STATIC_STRINGS);
 
     /**
      * SpiceDisplay:channel-id:
@@ -2434,45 +2435,37 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
      * channel-id for this #SpiceDisplay
      *
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_CHANNEL_ID,
-         g_param_spec_int("channel-id",
-                          "Channel ID",
-                          "Channel ID for this display",
-                          0, 255, 0,
-                          G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                          G_PARAM_STATIC_STRINGS));
+    props[PROP_CHANNEL_ID] = g_param_spec_int("channel-id",
+                                              "Channel ID",
+                                              "Channel ID for this display",
+                                              0, 255, 0,
+                                              G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
+                                              G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_property
-        (gobject_class, PROP_KEYBOARD_GRAB,
-         g_param_spec_boolean("grab-keyboard",
-                              "Grab Keyboard",
-                              "Whether we should grab the keyboard.",
-                              TRUE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_CONSTRUCT |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_KEYBOARD_GRAB] = g_param_spec_boolean("grab-keyboard",
+                                                     "Grab Keyboard",
+                                                     "Whether we should grab the keyboard.",
+                                                     TRUE,
+                                                     G_PARAM_READWRITE |
+                                                     G_PARAM_CONSTRUCT |
+                                                     G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_property
-        (gobject_class, PROP_MOUSE_GRAB,
-         g_param_spec_boolean("grab-mouse",
-                              "Grab Mouse",
-                              "Whether we should grab the mouse.",
-                              TRUE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_CONSTRUCT |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_MOUSE_GRAB] = g_param_spec_boolean("grab-mouse",
+                                                  "Grab Mouse",
+                                                  "Whether we should grab the mouse.",
+                                                  TRUE,
+                                                  G_PARAM_READWRITE |
+                                                  G_PARAM_CONSTRUCT |
+                                                  G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_property
-        (gobject_class, PROP_RESIZE_GUEST,
-         g_param_spec_boolean("resize-guest",
-                              "Resize guest",
-                              "Try to adapt guest display on window resize. "
-                              "Requires guest cooperation.",
-                              FALSE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_CONSTRUCT |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_RESIZE_GUEST] = g_param_spec_boolean("resize-guest",
+                                                    "Resize guest",
+                                                    "Try to adapt guest display on window resize. "
+                                                    "Requires guest cooperation.",
+                                                    FALSE,
+                                                    G_PARAM_READWRITE |
+                                                    G_PARAM_CONSTRUCT |
+                                                    G_PARAM_STATIC_STRINGS);
 
     /**
      * SpiceDisplay:ready:
@@ -2483,23 +2476,19 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
      *
      * Since: 0.13
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_READY,
-         g_param_spec_boolean("ready",
-                              "Ready",
-                              "Ready to display",
-                              FALSE,
-                              G_PARAM_READABLE |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_READY] = g_param_spec_boolean("ready",
+                                             "Ready",
+                                             "Ready to display",
+                                             FALSE,
+                                             G_PARAM_READABLE |
+                                             G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_property
-        (gobject_class, PROP_SCALING,
-         g_param_spec_boolean("scaling", "Scaling",
-                              "Whether we should use scaling",
-                              TRUE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_CONSTRUCT |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_SCALING] = g_param_spec_boolean("scaling", "Scaling",
+                                               "Whether we should use scaling",
+                                               TRUE,
+                                               G_PARAM_READWRITE |
+                                               G_PARAM_CONSTRUCT |
+                                               G_PARAM_STATIC_STRINGS);
 
     /**
      * SpiceDisplay:only-downscale:
@@ -2508,14 +2497,12 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
      *
      * Since: 0.14
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_ONLY_DOWNSCALE,
-         g_param_spec_boolean("only-downscale", "Only Downscale",
-                              "If scaling, only scale down, never up",
-                              FALSE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_CONSTRUCT |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_ONLY_DOWNSCALE] = g_param_spec_boolean("only-downscale", "Only Downscale",
+                                                      "If scaling, only scale down, never up",
+                                                      FALSE,
+                                                      G_PARAM_READWRITE |
+                                                      G_PARAM_CONSTRUCT |
+                                                      G_PARAM_STATIC_STRINGS);
 
     /**
      * SpiceDisplay:keypress-delay:
@@ -2528,14 +2515,12 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
      *
      * Since: 0.13
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_KEYPRESS_DELAY,
-         g_param_spec_uint("keypress-delay", "Keypress delay",
-                           "Keypress delay",
-                           0, G_MAXUINT, DEFAULT_KEYPRESS_DELAY,
-                           G_PARAM_READWRITE |
-                           G_PARAM_CONSTRUCT |
-                           G_PARAM_STATIC_STRINGS));
+    props[PROP_KEYPRESS_DELAY] = g_param_spec_uint("keypress-delay", "Keypress delay",
+                                                   "Keypress delay",
+                                                   0, G_MAXUINT, DEFAULT_KEYPRESS_DELAY,
+                                                   G_PARAM_READWRITE |
+                                                   G_PARAM_CONSTRUCT |
+                                                   G_PARAM_STATIC_STRINGS);
 
     /**
      * SpiceDisplay:disable-inputs:
@@ -2544,14 +2529,12 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
      *
      * Since: 0.8
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_DISABLE_INPUTS,
-         g_param_spec_boolean("disable-inputs", "Disable inputs",
-                              "Whether inputs should be disabled",
-                              FALSE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_CONSTRUCT |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_DISABLE_INPUTS] = g_param_spec_boolean("disable-inputs", "Disable inputs",
+                                                      "Whether inputs should be disabled",
+                                                      FALSE,
+                                                      G_PARAM_READWRITE |
+                                                      G_PARAM_CONSTRUCT |
+                                                      G_PARAM_STATIC_STRINGS);
 
 
     /**
@@ -2563,14 +2546,12 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
      *
      * Since: 0.10
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_ZOOM_LEVEL,
-         g_param_spec_int("zoom-level", "Zoom Level",
-                          "Zoom Level",
-                          10, 400, 100,
-                          G_PARAM_READWRITE |
-                          G_PARAM_CONSTRUCT |
-                          G_PARAM_STATIC_STRINGS));
+    props[PROP_ZOOM_LEVEL] = g_param_spec_int("zoom-level", "Zoom Level",
+                                              "Zoom Level",
+                                              10, 400, 100,
+                                              G_PARAM_READWRITE |
+                                              G_PARAM_CONSTRUCT |
+                                              G_PARAM_STATIC_STRINGS);
 
     /**
      * SpiceDisplay:monitor-id:
@@ -2581,15 +2562,15 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
      *
      * Since: 0.13
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_MONITOR_ID,
-         g_param_spec_int("monitor-id",
-                          "Monitor ID",
-                          "Select monitor ID",
-                          -1, G_MAXINT, 0,
-                          G_PARAM_READWRITE |
-                          G_PARAM_CONSTRUCT |
-                          G_PARAM_STATIC_STRINGS));
+    props[PROP_MONITOR_ID] = g_param_spec_int("monitor-id",
+                                              "Monitor ID",
+                                              "Select monitor ID",
+                                              -1, G_MAXINT, 0,
+                                              G_PARAM_READWRITE |
+                                              G_PARAM_CONSTRUCT |
+                                              G_PARAM_STATIC_STRINGS);
+
+    g_object_class_install_properties(gobject_class, N_PROPS, props);
 
     /**
      * SpiceDisplay::mouse-grab:

@@ -92,7 +92,10 @@ enum {
     PROP_CHANNEL_ID,
     PROP_TOTAL_READ_BYTES,
     PROP_SOCKET,
+    N_PROPS
 };
+
+static GParamSpec *props[N_PROPS] = { NULL, };
 
 /* Signals */
 enum {
@@ -292,44 +295,36 @@ static void spice_channel_class_init(SpiceChannelClass *klass)
     gobject_class->set_property = spice_channel_set_property;
     klass->handle_msg           = spice_channel_handle_msg;
 
-    g_object_class_install_property
-        (gobject_class, PROP_SESSION,
-         g_param_spec_object("spice-session",
-                             "Spice session",
-                             "Spice session",
-                             SPICE_TYPE_SESSION,
-                             G_PARAM_READWRITE |
-                             G_PARAM_CONSTRUCT_ONLY |
-                             G_PARAM_STATIC_STRINGS));
+    props[PROP_SESSION] = g_param_spec_object("spice-session",
+                                              "Spice session",
+                                              "Spice session",
+                                              SPICE_TYPE_SESSION,
+                                              G_PARAM_READWRITE |
+                                              G_PARAM_CONSTRUCT_ONLY |
+                                              G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_property
-        (gobject_class, PROP_CHANNEL_TYPE,
-         g_param_spec_int("channel-type",
-                          "Channel type",
-                          "Channel type",
-                          -1, INT_MAX, -1,
-                          G_PARAM_READWRITE |
-                          G_PARAM_CONSTRUCT_ONLY |
-                          G_PARAM_STATIC_STRINGS));
+    props[PROP_CHANNEL_TYPE] = g_param_spec_int("channel-type",
+                                                "Channel type",
+                                                "Channel type",
+                                                -1, INT_MAX, -1,
+                                                G_PARAM_READWRITE |
+                                                G_PARAM_CONSTRUCT_ONLY |
+                                                G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_property
-        (gobject_class, PROP_CHANNEL_ID,
-         g_param_spec_int("channel-id",
-                          "Channel ID",
-                          "Channel ID",
-                          -1, INT_MAX, -1,
-                          G_PARAM_READWRITE |
-                          G_PARAM_CONSTRUCT_ONLY |
-                          G_PARAM_STATIC_STRINGS));
+    props[PROP_CHANNEL_ID] = g_param_spec_int("channel-id",
+                                              "Channel ID",
+                                              "Channel ID",
+                                              -1, INT_MAX, -1,
+                                              G_PARAM_READWRITE |
+                                              G_PARAM_CONSTRUCT_ONLY |
+                                              G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_property
-        (gobject_class, PROP_TOTAL_READ_BYTES,
-         g_param_spec_ulong("total-read-bytes",
-                            "Total read bytes",
-                            "Total read bytes",
-                            0, G_MAXULONG, 0,
-                            G_PARAM_READABLE |
-                            G_PARAM_STATIC_STRINGS));
+    props[PROP_TOTAL_READ_BYTES] = g_param_spec_ulong("total-read-bytes",
+                                                      "Total read bytes",
+                                                      "Total read bytes",
+                                                      0, G_MAXULONG, 0,
+                                                      G_PARAM_READABLE |
+                                                      G_PARAM_STATIC_STRINGS);
 
     /**
      * SpiceChannel:socket:
@@ -341,14 +336,14 @@ static void spice_channel_class_init(SpiceChannelClass *klass)
      *
      * Since: 0.33
      */
-    g_object_class_install_property
-        (gobject_class, PROP_SOCKET,
-         g_param_spec_object("socket",
-                             "Socket",
-                             "Underlying GSocket",
-                             G_TYPE_SOCKET,
-                             G_PARAM_READABLE |
-                             G_PARAM_STATIC_STRINGS));
+    props[PROP_SOCKET] = g_param_spec_object("socket",
+                                             "Socket",
+                                             "Underlying GSocket",
+                                             G_TYPE_SOCKET,
+                                             G_PARAM_READABLE |
+                                             G_PARAM_STATIC_STRINGS);
+
+    g_object_class_install_properties(gobject_class, N_PROPS, props);
 
     /**
      * SpiceChannel::channel-event:

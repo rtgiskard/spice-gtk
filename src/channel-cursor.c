@@ -59,7 +59,10 @@ struct _SpiceCursorChannelPrivate {
 enum {
     PROP_0,
     PROP_CURSOR,
+    N_PROPS
 };
+
+static GParamSpec *props[N_PROPS] = { NULL, };
 
 enum {
     SPICE_CURSOR_SET,
@@ -183,14 +186,14 @@ static void spice_cursor_channel_class_init(SpiceCursorChannelClass *klass)
      *
      * Since: 0.34
      */
-    g_object_class_install_property
-        (gobject_class, PROP_CURSOR,
-         g_param_spec_boxed("cursor",
-                            "Last cursor shape",
-                            "Last cursor shape received from the server",
-                            SPICE_TYPE_CURSOR_SHAPE,
-                            G_PARAM_READABLE |
-                            G_PARAM_STATIC_STRINGS));
+    props[PROP_CURSOR] = g_param_spec_boxed("cursor",
+                                            "Last cursor shape",
+                                            "Last cursor shape received from the server",
+                                            SPICE_TYPE_CURSOR_SHAPE,
+                                            G_PARAM_READABLE |
+                                            G_PARAM_STATIC_STRINGS);
+
+    g_object_class_install_properties(gobject_class, N_PROPS, props);
     /**
      * SpiceCursorChannel::cursor-set:
      * @cursor: the #SpiceCursorChannel that emitted the signal

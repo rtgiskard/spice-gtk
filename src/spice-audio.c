@@ -50,7 +50,10 @@ enum {
     PROP_0,
     PROP_SESSION,
     PROP_MAIN_CONTEXT,
+    N_PROPS
 };
+
+static GParamSpec *props[N_PROPS] = { NULL, };
 
 static void spice_audio_finalize(GObject *gobject)
 {
@@ -108,7 +111,6 @@ static void spice_audio_set_property(GObject *gobject,
 static void spice_audio_class_init(SpiceAudioClass *klass)
 {
     GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
-    GParamSpec *pspec;
 
     gobject_class->finalize     = spice_audio_finalize;
     gobject_class->get_property = spice_audio_get_property;
@@ -120,19 +122,19 @@ static void spice_audio_class_init(SpiceAudioClass *klass)
      * #SpiceSession this #SpiceAudio is associated with
      *
      **/
-    pspec = g_param_spec_object("session", "Session", "SpiceSession",
-                                SPICE_TYPE_SESSION,
-                                G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
-    g_object_class_install_property(gobject_class, PROP_SESSION, pspec);
+    props[PROP_SESSION] = g_param_spec_object("session", "Session", "SpiceSession",
+                                              SPICE_TYPE_SESSION,
+                                              G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
 
     /**
      * SpiceAudio:main-context:
      */
-    pspec = g_param_spec_boxed("main-context", "Main Context",
-                               "GMainContext to use for the event source",
-                               G_TYPE_MAIN_CONTEXT,
-                               G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
-    g_object_class_install_property(gobject_class, PROP_MAIN_CONTEXT, pspec);
+    props[PROP_MAIN_CONTEXT] = g_param_spec_boxed("main-context", "Main Context",
+                                                  "GMainContext to use for the event source",
+                                                  G_TYPE_MAIN_CONTEXT,
+                                                  G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+
+    g_object_class_install_properties(gobject_class, N_PROPS, props);
 }
 
 static void spice_audio_init(SpiceAudio *self)

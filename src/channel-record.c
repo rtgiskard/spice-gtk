@@ -66,7 +66,10 @@ enum {
     PROP_NCHANNELS,
     PROP_VOLUME,
     PROP_MUTE,
+    N_PROPS
 };
+
+static GParamSpec *props[N_PROPS] = { NULL, };
 
 /* Signals */
 enum {
@@ -180,31 +183,27 @@ static void spice_record_channel_class_init(SpiceRecordChannelClass *klass)
     gobject_class->set_property = spice_record_channel_set_property;
     channel_class->channel_reset = channel_reset;
 
-    g_object_class_install_property
-        (gobject_class, PROP_NCHANNELS,
-         g_param_spec_uint("nchannels",
-                           "Number of Channels",
-                           "Number of Channels",
-                           0, G_MAXUINT8, 2,
-                           G_PARAM_READABLE |
-                           G_PARAM_STATIC_STRINGS));
+    props[PROP_NCHANNELS] = g_param_spec_uint("nchannels",
+                                              "Number of Channels",
+                                              "Number of Channels",
+                                              0, G_MAXUINT8, 2,
+                                              G_PARAM_READABLE |
+                                              G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_property
-        (gobject_class, PROP_VOLUME,
-         g_param_spec_pointer("volume",
-                              "Record volume",
-                              "Record volume",
-                              G_PARAM_READWRITE |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_VOLUME] = g_param_spec_pointer("volume",
+                                              "Record volume",
+                                              "Record volume",
+                                              G_PARAM_READWRITE |
+                                              G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_property
-        (gobject_class, PROP_MUTE,
-         g_param_spec_boolean("mute",
-                              "Mute",
-                              "Mute",
-                              FALSE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_MUTE] = g_param_spec_boolean("mute",
+                                            "Mute",
+                                            "Mute",
+                                            FALSE,
+                                            G_PARAM_READWRITE |
+                                            G_PARAM_STATIC_STRINGS);
+
+    g_object_class_install_properties(gobject_class, N_PROPS, props);
     /**
      * SpiceRecordChannel::record-start:
      * @channel: the #SpiceRecordChannel that emitted the signal

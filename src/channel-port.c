@@ -63,7 +63,10 @@ enum {
     PROP_0,
     PROP_PORT_NAME,
     PROP_PORT_OPENED,
+    N_PROPS
 };
+
+static GParamSpec *props[N_PROPS] = { NULL, };
 
 /* Signals */
 enum {
@@ -129,21 +132,19 @@ static void spice_port_channel_class_init(SpicePortChannelClass *klass)
     gobject_class->get_property = spice_port_get_property;
     channel_class->channel_reset = spice_port_channel_reset;
 
-    g_object_class_install_property
-        (gobject_class, PROP_PORT_NAME,
-         g_param_spec_string("port-name",
-                             "Port name",
-                             "Port name",
-                             NULL,
-                             G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+    props[PROP_PORT_NAME] = g_param_spec_string("port-name",
+                                                "Port name",
+                                                "Port name",
+                                                NULL,
+                                                G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_property
-        (gobject_class, PROP_PORT_OPENED,
-         g_param_spec_boolean("port-opened",
-                              "Port opened",
-                              "Port opened",
-                              FALSE,
-                              G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+    props[PROP_PORT_OPENED] = g_param_spec_boolean("port-opened",
+                                                   "Port opened",
+                                                   "Port opened",
+                                                   FALSE,
+                                                   G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
+
+    g_object_class_install_properties(gobject_class, N_PROPS, props);
 
     /**
      * SpicePortChannel::port-data:

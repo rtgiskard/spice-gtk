@@ -85,7 +85,10 @@ enum {
     PROP_MONITORS,
     PROP_MONITORS_MAX,
     PROP_GL_SCANOUT,
+    N_PROPS
 };
+
+static GParamSpec *props[N_PROPS] = { NULL, };
 
 enum {
     SPICE_DISPLAY_PRIMARY_CREATE,
@@ -283,23 +286,19 @@ static void spice_display_channel_class_init(SpiceDisplayChannelClass *klass)
     channel_class->channel_up   = spice_display_channel_up;
     channel_class->channel_reset = spice_display_channel_reset;
 
-    g_object_class_install_property
-        (gobject_class, PROP_HEIGHT,
-         g_param_spec_uint("height",
-                           "Display height",
-                           "The primary surface height",
-                           0, G_MAXUINT, 0,
-                           G_PARAM_READABLE |
-                           G_PARAM_STATIC_STRINGS));
+    props[PROP_HEIGHT] = g_param_spec_uint("height",
+                                           "Display height",
+                                           "The primary surface height",
+                                           0, G_MAXUINT, 0,
+                                           G_PARAM_READABLE |
+                                           G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_property
-        (gobject_class, PROP_WIDTH,
-         g_param_spec_uint("width",
-                           "Display width",
-                           "The primary surface width",
-                           0, G_MAXUINT, 0,
-                           G_PARAM_READABLE |
-                           G_PARAM_STATIC_STRINGS));
+    props[PROP_WIDTH] = g_param_spec_uint("width",
+                                          "Display width",
+                                          "The primary surface width",
+                                          0, G_MAXUINT, 0,
+                                          G_PARAM_READABLE |
+                                          G_PARAM_STATIC_STRINGS);
 
     /**
      * SpiceDisplayChannel:monitors: (type GArray(SpiceDisplayMonitorConfig))
@@ -308,14 +307,12 @@ static void spice_display_channel_class_init(SpiceDisplayChannelClass *klass)
      *
      * Since: 0.13
      */
-    g_object_class_install_property
-        (gobject_class, PROP_MONITORS,
-         g_param_spec_boxed("monitors",
-                            "Display monitors",
-                            "The monitors configuration",
-                            G_TYPE_ARRAY,
-                            G_PARAM_READABLE |
-                            G_PARAM_STATIC_STRINGS));
+    props[PROP_MONITORS] = g_param_spec_boxed("monitors",
+                                              "Display monitors",
+                                              "The monitors configuration",
+                                              G_TYPE_ARRAY,
+                                              G_PARAM_READABLE |
+                                              G_PARAM_STATIC_STRINGS);
 
     /**
      * SpiceDisplayChannel:monitors-max:
@@ -326,14 +323,12 @@ static void spice_display_channel_class_init(SpiceDisplayChannelClass *klass)
      *
      * Since: 0.13
      */
-    g_object_class_install_property
-        (gobject_class, PROP_MONITORS_MAX,
-         g_param_spec_uint("monitors-max",
-                           "Max display monitors",
-                           "The current maximum number of monitors",
-                           1, MONITORS_MAX, 1,
-                           G_PARAM_READABLE |
-                           G_PARAM_STATIC_STRINGS));
+    props[PROP_MONITORS_MAX] = g_param_spec_uint("monitors-max",
+                                                 "Max display monitors",
+                                                 "The current maximum number of monitors",
+                                                 1, MONITORS_MAX, 1,
+                                                 G_PARAM_READABLE |
+                                                 G_PARAM_STATIC_STRINGS);
 
     /**
      * SpiceDisplayChannel:gl-scanout:
@@ -342,14 +337,14 @@ static void spice_display_channel_class_init(SpiceDisplayChannelClass *klass)
      *
      * Since: 0.31
      */
-    g_object_class_install_property
-        (gobject_class, PROP_GL_SCANOUT,
-         g_param_spec_boxed("gl-scanout",
-                            "GL scanout",
-                            "GL scanout",
-                            SPICE_TYPE_GL_SCANOUT,
-                            G_PARAM_READABLE |
-                            G_PARAM_STATIC_STRINGS));
+    props[PROP_GL_SCANOUT] = g_param_spec_boxed("gl-scanout",
+                                                "GL scanout",
+                                                "GL scanout",
+                                                SPICE_TYPE_GL_SCANOUT,
+                                                G_PARAM_READABLE |
+                                                G_PARAM_STATIC_STRINGS);
+
+    g_object_class_install_properties(gobject_class, N_PROPS, props);
 
     /**
      * SpiceDisplayChannel::display-primary-create:

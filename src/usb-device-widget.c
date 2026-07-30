@@ -70,7 +70,10 @@ enum {
     PROP_0,
     PROP_SESSION,
     PROP_DEVICE_FORMAT_STRING,
+    N_PROPS
 };
+
+static GParamSpec *props[N_PROPS] = { NULL, };
 
 enum {
     CONNECT_FAILED,
@@ -331,7 +334,6 @@ static void spice_usb_device_widget_finalize(GObject *object)
 static void spice_usb_device_widget_class_init(SpiceUsbDeviceWidgetClass *klass)
 {
     GObjectClass *gobject_class = (GObjectClass *)klass;
-    GParamSpec *pspec;
 
     gobject_class->constructed  = spice_usb_device_widget_constructed;
     gobject_class->finalize     = spice_usb_device_widget_finalize;
@@ -344,13 +346,12 @@ static void spice_usb_device_widget_class_init(SpiceUsbDeviceWidgetClass *klass)
      * #SpiceSession this #SpiceUsbDeviceWidget is associated with
      *
      **/
-    pspec = g_param_spec_object("session",
-                                "Session",
-                                "SpiceSession",
-                                SPICE_TYPE_SESSION,
-                                G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                                G_PARAM_STATIC_STRINGS);
-    g_object_class_install_property(gobject_class, PROP_SESSION, pspec);
+    props[PROP_SESSION] = g_param_spec_object("session",
+                                              "Session",
+                                              "SpiceSession",
+                                              SPICE_TYPE_SESSION,
+                                              G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
+                                              G_PARAM_STATIC_STRINGS);
 
     /**
      * SpiceUsbDeviceWidget:device-format-string:
@@ -358,14 +359,14 @@ static void spice_usb_device_widget_class_init(SpiceUsbDeviceWidgetClass *klass)
      * Format string to pass to spice_usb_device_get_description() for getting
      * the device USB descriptions.
      */
-    pspec = g_param_spec_string("device-format-string",
-                                "Device format string",
-                                "Format string for device description",
-                                NULL,
-                                G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                                G_PARAM_STATIC_STRINGS);
-    g_object_class_install_property(gobject_class, PROP_DEVICE_FORMAT_STRING,
-                                    pspec);
+    props[PROP_DEVICE_FORMAT_STRING] = g_param_spec_string("device-format-string",
+                                                           "Device format string",
+                                                           "Format string for device description",
+                                                           NULL,
+                                                           G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
+                                                           G_PARAM_STATIC_STRINGS);
+
+    g_object_class_install_properties(gobject_class, N_PROPS, props);
 
     /**
      * SpiceUsbDeviceWidget::connect-failed:

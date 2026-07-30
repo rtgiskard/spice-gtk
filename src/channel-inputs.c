@@ -54,7 +54,10 @@ G_DEFINE_TYPE_WITH_PRIVATE(SpiceInputsChannel, spice_inputs_channel, SPICE_TYPE_
 enum {
     PROP_0,
     PROP_KEY_MODIFIERS,
+    N_PROPS
 };
+
+static GParamSpec *props[N_PROPS] = { NULL, };
 
 /* Signals */
 enum {
@@ -109,16 +112,16 @@ static void spice_inputs_channel_class_init(SpiceInputsChannelClass *klass)
     channel_class->channel_up   = spice_inputs_channel_up;
     channel_class->channel_reset = spice_inputs_channel_reset;
 
-    g_object_class_install_property
-        (gobject_class, PROP_KEY_MODIFIERS,
-         g_param_spec_int("key-modifiers",
-                          "Key modifiers",
-                          "Guest keyboard lock/led state",
-                          0, INT_MAX, 0,
-                          G_PARAM_READABLE |
-                          G_PARAM_STATIC_NAME |
-                          G_PARAM_STATIC_NICK |
-                          G_PARAM_STATIC_BLURB));
+    props[PROP_KEY_MODIFIERS] = g_param_spec_int("key-modifiers",
+                                                 "Key modifiers",
+                                                 "Guest keyboard lock/led state",
+                                                 0, INT_MAX, 0,
+                                                 G_PARAM_READABLE |
+                                                 G_PARAM_STATIC_NAME |
+                                                 G_PARAM_STATIC_NICK |
+                                                 G_PARAM_STATIC_BLURB);
+
+    g_object_class_install_properties(gobject_class, N_PROPS, props);
 
     /**
      * SpiceInputsChannel::inputs-modifiers:

@@ -67,7 +67,10 @@ enum {
     PROP_VOLUME,
     PROP_MUTE,
     PROP_MIN_LATENCY,
+    N_PROPS
 };
+
+static GParamSpec *props[N_PROPS] = { NULL, };
 
 /* Signals */
 enum {
@@ -186,39 +189,33 @@ static void spice_playback_channel_class_init(SpicePlaybackChannelClass *klass)
 
     channel_class->channel_reset = spice_playback_channel_reset;
 
-    g_object_class_install_property
-        (gobject_class, PROP_NCHANNELS,
-         g_param_spec_uint("nchannels",
-                           "Number of Channels",
-                           "Number of Channels",
-                           0, G_MAXUINT8, 2,
-                           G_PARAM_READABLE |
-                           G_PARAM_STATIC_STRINGS));
+    props[PROP_NCHANNELS] = g_param_spec_uint("nchannels",
+                                              "Number of Channels",
+                                              "Number of Channels",
+                                              0, G_MAXUINT8, 2,
+                                              G_PARAM_READABLE |
+                                              G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_property
-        (gobject_class, PROP_VOLUME,
-         g_param_spec_pointer("volume",
-                              "Playback volume",
-                              "Playback volume",
-                              G_PARAM_READWRITE |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_VOLUME] = g_param_spec_pointer("volume",
+                                              "Playback volume",
+                                              "Playback volume",
+                                              G_PARAM_READWRITE |
+                                              G_PARAM_STATIC_STRINGS);
 
-    g_object_class_install_property
-        (gobject_class, PROP_MUTE,
-         g_param_spec_boolean("mute",
-                              "Mute",
-                              "Mute",
-                              FALSE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_STATIC_STRINGS));
-    g_object_class_install_property
-        (gobject_class, PROP_MIN_LATENCY,
-         g_param_spec_uint("min-latency",
-                           "Playback min buffer size (ms)",
-                           "Playback min buffer size (ms)",
-                           0, G_MAXUINT32, SPICE_PLAYBACK_DEFAULT_LATENCY_MS,
-                           G_PARAM_READABLE |
-                           G_PARAM_STATIC_STRINGS));
+    props[PROP_MUTE] = g_param_spec_boolean("mute",
+                                            "Mute",
+                                            "Mute",
+                                            FALSE,
+                                            G_PARAM_READWRITE |
+                                            G_PARAM_STATIC_STRINGS);
+    props[PROP_MIN_LATENCY] = g_param_spec_uint("min-latency",
+                                                "Playback min buffer size (ms)",
+                                                "Playback min buffer size (ms)",
+                                                0, G_MAXUINT32, SPICE_PLAYBACK_DEFAULT_LATENCY_MS,
+                                                G_PARAM_READABLE |
+                                                G_PARAM_STATIC_STRINGS);
+
+    g_object_class_install_properties(gobject_class, N_PROPS, props);
     /**
      * SpicePlaybackChannel::playback-start:
      * @channel: the #SpicePlaybackChannel that emitted the signal

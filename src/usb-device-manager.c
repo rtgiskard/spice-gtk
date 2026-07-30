@@ -76,7 +76,10 @@ enum {
     PROP_AUTO_CONNECT_FILTER,
     PROP_REDIRECT_ON_CONNECT,
     PROP_FREE_CHANNELS,
+    N_PROPS
 };
+
+static GParamSpec *props[N_PROPS] = { NULL, };
 
 enum
 {
@@ -396,7 +399,7 @@ static void spice_usb_device_manager_set_property(GObject       *gobject,
         priv->auto_conn_filter_rules_count = count;
 #endif
         if (g_set_str(&priv->auto_connect_filter, filter))
-            g_object_notify(gobject, "auto-connect-filter");
+            g_object_notify_by_pspec(gobject, props[PROP_AUTO_CONNECT_FILTER]);
         else
             return;
 
@@ -429,7 +432,7 @@ static void spice_usb_device_manager_set_property(GObject       *gobject,
         priv->redirect_on_connect_rules_count = count;
 #endif
         if (g_set_str(&priv->redirect_on_connect, filter))
-            g_object_notify(gobject, "redirect-on-connect");
+            g_object_notify_by_pspec(gobject, props[PROP_REDIRECT_ON_CONNECT]);
         break;
     }
     case PROP_FREE_CHANNELS:
@@ -444,7 +447,6 @@ static void spice_usb_device_manager_set_property(GObject       *gobject,
 static void spice_usb_device_manager_class_init(SpiceUsbDeviceManagerClass *klass)
 {
     GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
-    GParamSpec *pspec;
 
     gobject_class->dispose      = spice_usb_device_manager_dispose;
     gobject_class->finalize     = spice_usb_device_manager_finalize;
@@ -457,14 +459,12 @@ static void spice_usb_device_manager_class_init(SpiceUsbDeviceManagerClass *klas
      * #SpiceSession this #SpiceUsbDeviceManager is associated with
      *
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_SESSION,
-         g_param_spec_object("session",
-                             "Session",
-                             "SpiceSession",
-                             SPICE_TYPE_SESSION,
-                             G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                             G_PARAM_STATIC_STRINGS));
+    props[PROP_SESSION] = g_param_spec_object("session",
+                                              "Session",
+                                              "SpiceSession",
+                                              SPICE_TYPE_SESSION,
+                                              G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
+                                              G_PARAM_STATIC_STRINGS);
 
     /**
      * SpiceUsbDeviceManager:auto-connect:
@@ -474,11 +474,10 @@ static void spice_usb_device_manager_class_init(SpiceUsbDeviceManagerClass *klas
      * Note when #SpiceGtkSession's auto-usbredir property is TRUE, this
      * property is controlled by #SpiceGtkSession.
      */
-    pspec = g_param_spec_boolean("auto-connect", "Auto Connect",
-                                 "Auto connect plugged in USB devices",
-                                 FALSE,
-                                 G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
-    g_object_class_install_property(gobject_class, PROP_AUTO_CONNECT, pspec);
+    props[PROP_AUTO_CONNECT] = g_param_spec_boolean("auto-connect", "Auto Connect",
+                                                    "Auto connect plugged in USB devices",
+                                                    FALSE,
+                                                    G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
 
     /**
      * SpiceUsbDeviceManager:auto-connect-filter:
@@ -503,12 +502,10 @@ static void spice_usb_device_manager_class_init(SpiceUsbDeviceManagerClass *klas
      * Filter strings in this format can be easily created with the RHEV-M
      * USB filter editor tool.
      */
-    pspec = g_param_spec_string("auto-connect-filter", "Auto Connect Filter ",
-               "Filter determining which USB devices to auto connect",
-               "0x03,-1,-1,-1,0|-1,-1,-1,-1,1",
-               G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_STRINGS);
-    g_object_class_install_property(gobject_class, PROP_AUTO_CONNECT_FILTER,
-                                    pspec);
+    props[PROP_AUTO_CONNECT_FILTER] = g_param_spec_string("auto-connect-filter", "Auto Connect Filter ",
+                                                          "Filter determining which USB devices to auto connect",
+                                                          "0x03,-1,-1,-1,0|-1,-1,-1,-1,1",
+                                                          G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_STRINGS);
 
     /**
      * SpiceUsbDeviceManager:redirect-on-connect:
@@ -519,11 +516,9 @@ static void spice_usb_device_manager_class_init(SpiceUsbDeviceManagerClass *klas
      * See #SpiceUsbDeviceManager:auto-connect-filter for the filter string
      * format.
      */
-    pspec = g_param_spec_string("redirect-on-connect", "Redirect on connect",
-               "Filter selecting USB devices to redirect on connect", NULL,
-               G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
-    g_object_class_install_property(gobject_class, PROP_REDIRECT_ON_CONNECT,
-                                    pspec);
+    props[PROP_REDIRECT_ON_CONNECT] = g_param_spec_string("redirect-on-connect", "Redirect on connect",
+                                                          "Filter selecting USB devices to redirect on connect", NULL,
+                                                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
 
     /**
      * SpiceUsbDeviceManager:free-channels:
@@ -532,13 +527,14 @@ static void spice_usb_device_manager_class_init(SpiceUsbDeviceManagerClass *klas
      *
      * Since: 0.31
      */
-    pspec = g_param_spec_int("free-channels", "Free channels",
-                             "The number of available channels for redirecting USB devices",
-                             0,
-                             G_MAXINT,
-                             0,
-                             G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
-    g_object_class_install_property(gobject_class, PROP_FREE_CHANNELS, pspec);
+    props[PROP_FREE_CHANNELS] = g_param_spec_int("free-channels", "Free channels",
+                                                 "The number of available channels for redirecting USB devices",
+                                                 0,
+                                                 G_MAXINT,
+                                                 0,
+                                                 G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
+
+    g_object_class_install_properties(gobject_class, N_PROPS, props);
 
     /**
      * SpiceUsbDeviceManager::device-added:
