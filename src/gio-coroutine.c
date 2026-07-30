@@ -48,17 +48,15 @@ GIOCondition g_coroutine_socket_wait(GCoroutine *self,
                                      GIOCondition cond)
 {
     GIOCondition *ret, val = 0;
-    GSource *src;
 
     g_return_val_if_fail(self != NULL, 0);
     g_return_val_if_fail(self->wait_id == 0, 0);
     g_return_val_if_fail(sock != NULL, 0);
 
-    src = g_socket_create_source(sock, cond | G_IO_HUP | G_IO_ERR | G_IO_NVAL, NULL);
+    g_autoptr(GSource) src = g_socket_create_source(sock, cond | G_IO_HUP | G_IO_ERR | G_IO_NVAL, NULL);
     g_source_set_callback(src, (GSourceFunc)g_io_wait_helper, self, NULL);
     self->wait_id = g_source_attach(src, NULL);
     ret = coroutine_yield(NULL);
-    g_source_unref(src);
 
     if (ret != NULL)
         val = *ret;
@@ -144,7 +142,6 @@ static gboolean g_condition_wait_helper(gpointer data)
  */
 gboolean g_coroutine_condition_wait(GCoroutine *self, GConditionWaitFunc func, gpointer data)
 {
-    GSource *src;
     GConditionWaitSource *vsrc;
 
     g_return_val_if_fail(self != NULL, FALSE);
@@ -159,7 +156,7 @@ gboolean g_coroutine_condition_wait(GCoroutine *self, GConditionWaitFunc func, g
      * Don't have it, so yield to the main loop, checking the condition
      * on each iteration of the main loop
      */
-    src = g_source_new(&waitFuncs, sizeof(GConditionWaitSource));
+    g_autoptr(GSource) src = g_source_new(&waitFuncs, sizeof(GConditionWaitSource));
     vsrc = (GConditionWaitSource *)src;
 
     vsrc->func = func;
@@ -168,7 +165,6 @@ gboolean g_coroutine_condition_wait(GCoroutine *self, GConditionWaitFunc func, g
     self->condition_id = g_source_attach(src, NULL);
     g_source_set_callback(src, g_condition_wait_helper, self, NULL);
     coroutine_yield(NULL);
-    g_source_unref(src);
 
     /* it got woked up / cancelled? */
     if (self->condition_id == 0)
