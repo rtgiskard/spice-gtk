@@ -334,7 +334,7 @@ void spice_usbredir_channel_connect_device_async(SpiceUsbredirChannel *channel,
 #ifdef USE_POLKIT
     const UsbDeviceInformation *info = spice_usb_backend_device_get_info(device);
 #endif
-    GTask *task;
+    g_autoptr(GTask) task = NULL;
 
     g_return_if_fail(SPICE_IS_USBREDIR_CHANNEL(channel));
     g_return_if_fail(device != NULL);
@@ -364,7 +364,7 @@ void spice_usbredir_channel_connect_device_async(SpiceUsbredirChannel *channel,
     priv->device = spice_usb_backend_device_ref(device);
 #ifdef USE_POLKIT
     if (info->bus != BUS_NUMBER_FOR_EMULATED_USB) {
-        priv->task = task;
+        priv->task = g_steal_pointer(&task);
         priv->state  = STATE_WAITING_FOR_ACL_HELPER;
         priv->acl_helper = spice_usb_acl_helper_new();
         g_object_set(spice_channel_get_session(SPICE_CHANNEL(channel)),
@@ -379,9 +379,6 @@ void spice_usbredir_channel_connect_device_async(SpiceUsbredirChannel *channel,
     }
 #endif
     g_task_run_in_thread(task, _open_device_async_cb);
-
-done:
-    g_object_unref(task);
 }
 
 G_GNUC_INTERNAL
@@ -453,12 +450,11 @@ void spice_usbredir_channel_disconnect_device_async(SpiceUsbredirChannel *channe
                                                     GAsyncReadyCallback callback,
                                                     gpointer user_data)
 {
-    GTask* task = g_task_new(channel, cancellable, callback, user_data);
+    g_autoptr(GTask) task = g_task_new(channel, cancellable, callback, user_data);
     g_task_set_source_tag(task, spice_usbredir_channel_disconnect_device_async);
 
     g_return_if_fail(channel != NULL);
     g_task_run_in_thread(task, _disconnect_device_thread);
-    g_object_unref(task);
 }
 
 #ifdef USE_LZ4
@@ -505,7 +501,7 @@ static int try_write_compress_LZ4(SpiceUsbredirChannel *channel, uint8_t *data, 
     SpiceChannelPrivate *c;
     SpiceMsgOut *msg_out_compressed;
     int bound, compressed_data_count;
-    uint8_t *compressed_buf;
+    g_autofree uint8_t *compressed_buf = NULL;
     SpiceMsgCompressedData compressed_data_msg = {
         .type = SPICE_DATA_COMPRESSION_TYPE_LZ4,
         .uncompressed_size = count
@@ -541,7 +537,7 @@ static int try_write_compress_LZ4(SpiceUsbredirChannel *channel, uint8_t *data, 
                                                  count,
                                                  bound);
     if (compressed_data_count > 0 && compressed_data_count < count) {
-        compressed_data_msg.compressed_data = compressed_buf;
+        compressed_data_msg.compressed_data = g_steal_pointer(&compressed_buf);
         msg_out_compressed = spice_msg_out_new(SPICE_CHANNEL(channel),
                                                SPICE_MSGC_SPICEVMC_COMPRESSED_DATA);
         msg_out_compressed->marshallers->msg_SpiceMsgCompressedData(msg_out_compressed->marshaller,
@@ -555,8 +551,7 @@ static int try_write_compress_LZ4(SpiceUsbredirChannel *channel, uint8_t *data, 
         return TRUE;
     }
 
-    /* if not - free & fallback to sending the message uncompressed */
-    g_free(compressed_buf);
+    /* if not - fallback to sending the message uncompressed */
     return FALSE;
 }
 #endif
@@ -636,7 +631,7 @@ static int try_handle_compressed_msg(SpiceMsgCompressedData *compressed_data_msg
                                      uint8_t **buf,
                                      int *size) {
     int decompressed_size = 0;
-    char *decompressed = NULL;
+    g_autofree char *decompressed = NULL;
 
     if (compressed_data_msg->uncompressed_size == 0) {
         spice_warning("Invalid uncompressed_size");
@@ -660,12 +655,11 @@ static int try_handle_compressed_msg(SpiceMsgCompressedData *compressed_data_msg
     if (decompressed_size != compressed_data_msg->uncompressed_size) {
         spice_warning("Decompress Error decompressed_size=%d expected=%u",
                       decompressed_size, compressed_data_msg->uncompressed_size);
-        g_free(decompressed);
         return FALSE;
     }
 
     *size = decompressed_size;
-    *buf = (uint8_t*)decompressed;
+    *buf = (uint8_t*)g_steal_pointer(&decompressed);
     return TRUE;
 
 }
@@ -676,17 +670,16 @@ static void usbredir_handle_msg(SpiceChannel *c, SpiceMsgIn *in)
     SpiceUsbredirChannelPrivate *priv = channel->priv;
     int r = 0, size;
     uint8_t *buf;
+    g_autofree uint8_t *tmp_buf = NULL;
 
     g_return_if_fail(priv->host != NULL);
 
     if (spice_msg_in_type(in) == SPICE_MSG_SPICEVMC_COMPRESSED_DATA) {
         SpiceMsgCompressedData *compressed_data_msg = spice_msg_in_parsed(in);
-        if (try_handle_compressed_msg(compressed_data_msg, &buf, &size)) {
-            /* uncompressed ok*/
-        } else {
-            buf = NULL;
+        if (!try_handle_compressed_msg(compressed_data_msg, &tmp_buf, &size)) {
             r = USB_REDIR_ERROR_READ_PARSE;
         }
+        buf = tmp_buf;
     } else { /* Regular SPICE_MSG_SPICEVMC_DATA msg */
         buf = spice_msg_in_raw(in, &size);
     }
@@ -697,12 +690,8 @@ static void usbredir_handle_msg(SpiceChannel *c, SpiceMsgIn *in)
     if (r != 0 && priv->device != NULL) {
         SpiceUsbDevice *device = priv->device;
         device_error_data err_data;
-        gchar *desc;
-        GError *err;
-
-        desc = spice_usb_device_get_description(device, NULL);
-        err = spice_usb_backend_get_error_details(r, desc);
-        g_free(desc);
+        g_autofree gchar *desc = spice_usb_device_get_description(device, NULL);
+        g_autoptr(GError) err = spice_usb_backend_get_error_details(r, desc);
 
         CHANNEL_DEBUG(c, "%s", err->message);
 
@@ -715,13 +704,8 @@ static void usbredir_handle_msg(SpiceChannel *c, SpiceMsgIn *in)
         coroutine_yield(NULL);
 
         spice_usb_backend_device_unref(err_data.device);
-
-        g_error_free(err);
     } else {
         spice_usbredir_channel_unlock(channel);
-    }
-    if (spice_msg_in_type(in) == SPICE_MSG_SPICEVMC_COMPRESSED_DATA) {
-        g_free(buf);
     }
 }
 
