@@ -144,7 +144,7 @@ static gboolean record_bus_cb(GstBus *bus, GstMessage *msg, gpointer data)
 
     switch (GST_MESSAGE_TYPE(msg)) {
     case GST_MESSAGE_APPLICATION: {
-        GstSample *s;
+        g_autoptr(GstSample) s = NULL;
         GstBuffer *buffer;
         GstMapInfo mapping;
 
@@ -170,7 +170,6 @@ static gboolean record_bus_cb(GstBus *bus, GstMessage *msg, gpointer data)
                                   what is the unit? ms apparently */
                                mapping.data, mapping.size, 0);
         gst_buffer_unmap(buffer, &mapping);
-        gst_sample_unref(s);
         break;
     }
     default:
@@ -200,10 +199,10 @@ static void record_start(SpiceRecordChannel *channel, gint format, gint channels
     if (!p->record.pipe) {
         GError *error = NULL;
         GstBus *bus;
-        gchar *audio_caps =
+        g_autofree gchar *audio_caps =
             g_strdup_printf("audio/x-raw,format=\"S16LE\",channels=%d,rate=%d,"
                             "layout=interleaved", channels, frequency);
-        gchar *pipeline =
+        g_autofree gchar *pipeline =
             g_strdup_printf("autoaudiosrc name=audiosrc ! queue ! audioconvert ! audioresample ! "
                             "appsink caps=\"%s\" name=appsink", audio_caps);
 
@@ -230,8 +229,6 @@ cleanup:
         if (error != NULL)
             g_clear_pointer(&p->record.pipe, gst_object_unref);
         g_clear_error(&error);
-        g_free(audio_caps);
-        g_free(pipeline);
     }
 
     if (p->record.pipe)
@@ -251,7 +248,7 @@ static gboolean update_mmtime_timeout_cb(gpointer data)
 {
     SpiceGstaudio *gstaudio = data;
     SpiceGstaudioPrivate *p = gstaudio->priv;
-    GstQuery *q;
+    g_autoptr(GstQuery) q = NULL;
 
     g_return_val_if_fail(!p->playback.fake, TRUE);
 
@@ -265,8 +262,6 @@ static gboolean update_mmtime_timeout_cb(gpointer data)
                     GST_TIME_ARGS (maxlat), live);
         spice_playback_channel_set_delay(SPICE_PLAYBACK_CHANNEL(p->pchannel), GST_TIME_AS_MSECONDS(minlat));
     }
-    gst_query_unref (q);
-
     return G_SOURCE_CONTINUE;
 }
 
@@ -288,10 +283,10 @@ static void playback_start(SpicePlaybackChannel *channel, gint format, gint chan
 
     if (!p->playback.pipe) {
         GError *error = NULL;
-        gchar *audio_caps =
+        g_autofree gchar *audio_caps =
             g_strdup_printf("audio/x-raw,format=\"S16LE\",channels=%d,rate=%d,"
                             "layout=interleaved", channels, frequency);
-        gchar *pipeline = g_strdup (g_getenv("SPICE_GST_AUDIOSINK"));
+        g_autofree gchar *pipeline = g_strdup (g_getenv("SPICE_GST_AUDIOSINK"));
         if (pipeline == NULL)
             pipeline = g_strdup_printf("appsrc is-live=1 do-timestamp=0 format=time caps=\"%s\" name=\"appsrc\" ! queue ! "
                                        "audioconvert ! audioresample ! autoaudiosink name=\"audiosink\"", audio_caps);
@@ -310,8 +305,6 @@ cleanup:
         if (error != NULL)
             g_clear_pointer(&p->playback.pipe, gst_object_unref);
         g_clear_error(&error);
-        g_free(audio_caps);
-        g_free(pipeline);
     }
 
     if (p->playback.pipe)
@@ -343,7 +336,7 @@ static void playback_data(SpicePlaybackChannel *channel,
 static void playback_volume_changed(GObject *object, GParamSpec *pspec, gpointer data)
 {
     SpiceGstaudio *gstaudio = data;
-    GstElement *e = NULL;
+    g_autoptr(GstElement) e = NULL;
     guint16 *volume;
     guint nchannels;
     SpiceGstaudioPrivate *p = gstaudio->priv;
@@ -377,15 +370,13 @@ static void playback_volume_changed(GObject *object, GParamSpec *pspec, gpointer
     } else {
         g_warning("playback: ignoring volume change on %s", gst_element_get_name(e));
     }
-
-    g_object_unref(e);
 }
 
 static void playback_mute_changed(GObject *object, GParamSpec *pspec, gpointer data)
 {
     SpiceGstaudio *gstaudio = data;
     SpiceGstaudioPrivate *p = gstaudio->priv;
-    GstElement *e = NULL;
+    g_autoptr(GstElement) e = NULL;
     gboolean mute;
 
     if (!p->playback.sink)
@@ -409,15 +400,13 @@ static void playback_mute_changed(GObject *object, GParamSpec *pspec, gpointer d
     } else {
         g_warning("playback: ignoring mute change on %s", gst_element_get_name(e));
     }
-
-    g_object_unref(e);
 }
 
 static void record_volume_changed(GObject *object, GParamSpec *pspec, gpointer data)
 {
     SpiceGstaudio *gstaudio = data;
     SpiceGstaudioPrivate *p = gstaudio->priv;
-    GstElement *e = NULL;
+    g_autoptr(GstElement) e = NULL;
     guint16 *volume;
     guint nchannels;
     gdouble vol;
@@ -450,15 +439,13 @@ static void record_volume_changed(GObject *object, GParamSpec *pspec, gpointer d
     } else {
         g_warning("record: ignoring volume change on %s", gst_element_get_name(e));
     }
-
-    g_object_unref(e);
 }
 
 static void record_mute_changed(GObject *object, GParamSpec *pspec, gpointer data)
 {
     SpiceGstaudio *gstaudio = data;
     SpiceGstaudioPrivate *p = gstaudio->priv;
-    GstElement *e = NULL;
+    g_autoptr(GstElement) e = NULL;
     gboolean mute;
 
     if (!p->record.src)
@@ -482,8 +469,6 @@ static void record_mute_changed(GObject *object, GParamSpec *pspec, gpointer dat
     } else {
         g_warning("record: ignoring mute change on %s", gst_element_get_name(e));
     }
-
-    g_object_unref(e);
 }
 
 static void
@@ -562,12 +547,12 @@ SpiceGstaudio *spice_gstaudio_new(SpiceSession *session, GMainContext *context,
     GError *err = NULL;
 
     if (gst_init_check(NULL, NULL, &err)) {
-        GstPluginFeature *pulsesrc;
+        g_autoptr(GstPluginFeature) pulsesrc = NULL;
 
         pulsesrc = gst_registry_lookup_feature(gst_registry_get(), "pulsesrc");
         if (pulsesrc) {
             unsigned major, minor, micro;
-            GstPlugin *plugin = gst_plugin_feature_get_plugin(pulsesrc);
+            g_autoptr(GstPlugin) plugin = gst_plugin_feature_get_plugin(pulsesrc);
 
             if (sscanf(gst_plugin_get_version(plugin), "%u.%u.%u",
                        &major, &minor, &micro) != 3) {
@@ -584,9 +569,6 @@ SpiceGstaudio *spice_gstaudio_new(SpiceSession *session, GMainContext *context,
                           gst_plugin_get_version(plugin));
                 gst_plugin_feature_set_rank(pulsesrc, GST_RANK_NONE);
             }
-
-            gst_object_unref(plugin);
-            gst_object_unref(pulsesrc);
         }
 
         return g_object_new(SPICE_TYPE_GSTAUDIO,
@@ -606,11 +588,10 @@ static void spice_gstaudio_get_playback_volume_info_async(SpiceAudio *audio,
                                                           GAsyncReadyCallback callback,
                                                           gpointer user_data)
 {
-    GTask *task = g_task_new(audio, cancellable, callback, user_data);
+    g_autoptr(GTask) task = g_task_new(audio, cancellable, callback, user_data);
     g_task_set_source_tag(task, spice_gstaudio_get_playback_volume_info_async);
 
     g_task_return_boolean(task, TRUE);
-    g_object_unref(task);
 }
 
 static gboolean spice_gstaudio_get_playback_volume_info_finish(SpiceAudio *audio,
@@ -621,7 +602,7 @@ static gboolean spice_gstaudio_get_playback_volume_info_finish(SpiceAudio *audio
                                                                GError **error)
 {
     SpiceGstaudioPrivate *p = SPICE_GSTAUDIO(audio)->priv;
-    GstElement *e = NULL;
+    g_autoptr(GstElement) e = NULL;
     gboolean lmute;
     gdouble vol;
     GTask *task = G_TASK(res);
@@ -656,7 +637,6 @@ static gboolean spice_gstaudio_get_playback_volume_info_finish(SpiceAudio *audio
                      "volume", &vol,
                      "mute", &lmute, NULL);
     }
-    g_object_unref(e);
 
     if (p->playback.fake) {
         SPICE_DEBUG("Stop faked PlaybackChannel");
@@ -690,11 +670,10 @@ static void spice_gstaudio_get_record_volume_info_async(SpiceAudio *audio,
                                                         GAsyncReadyCallback callback,
                                                         gpointer user_data)
 {
-    GTask *task = g_task_new(audio, cancellable, callback, user_data);
+    g_autoptr(GTask) task = g_task_new(audio, cancellable, callback, user_data);
     g_task_set_source_tag(task, spice_gstaudio_get_record_volume_info_async);
 
     g_task_return_boolean(task, TRUE);
-    g_object_unref(task);
 }
 
 static gboolean spice_gstaudio_get_record_volume_info_finish(SpiceAudio *audio,
@@ -705,7 +684,7 @@ static gboolean spice_gstaudio_get_record_volume_info_finish(SpiceAudio *audio,
                                                              GError **error)
 {
     SpiceGstaudioPrivate *p = SPICE_GSTAUDIO(audio)->priv;
-    GstElement *e = NULL;
+    g_autoptr(GstElement) e = NULL;
     gboolean lmute;
     gdouble vol;
     gboolean fake_channel = FALSE;
@@ -741,7 +720,6 @@ static gboolean spice_gstaudio_get_record_volume_info_finish(SpiceAudio *audio,
                      "volume", &vol,
                      "mute", &lmute, NULL);
     }
-    g_object_unref(e);
 
     if (fake_channel) {
         SPICE_DEBUG("Stop faked RecordChannel");
