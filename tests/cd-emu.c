@@ -271,10 +271,8 @@ static void attach(const void *param)
 */
 
     // cleanup
-    spice_usb_backend_device_unref(device);
-    device = NULL;
-    spice_usb_backend_channel_delete(usb_ch);
-    usb_ch = NULL;
+    g_clear_pointer(&device, spice_usb_backend_device_unref);
+    g_clear_pointer(&usb_ch, spice_usb_backend_channel_delete);
     spice_usb_backend_deregister_hotplug(be);
     spice_usb_backend_delete(be);
 

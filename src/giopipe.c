@@ -215,12 +215,10 @@ pipe_input_stream_dispose(GObject *object)
     self = PIPE_INPUT_STREAM(object);
 
     if (self->peer) {
-        g_object_remove_weak_pointer(G_OBJECT(self->peer), (gpointer*)&self->peer);
-        self->peer = NULL;
+        g_clear_weak_pointer(&self->peer);
     }
 
-    g_list_free_full (self->sources, (GDestroyNotify) g_source_unref);
-    self->sources = NULL;
+    g_clear_list(&self->sources, (GDestroyNotify) g_source_unref);
 
     G_OBJECT_CLASS(pipe_input_stream_parent_class)->dispose (object);
 }
@@ -335,12 +333,10 @@ pipe_output_stream_dispose(GObject *object)
     self = PIPE_OUTPUT_STREAM(object);
 
     if (self->peer) {
-        g_object_remove_weak_pointer(G_OBJECT(self->peer), (gpointer*)&self->peer);
-        self->peer = NULL;
+        g_clear_weak_pointer(&self->peer);
     }
 
-    g_list_free_full (self->sources, (GDestroyNotify) g_source_unref);
-    self->sources = NULL;
+    g_clear_list(&self->sources, (GDestroyNotify) g_source_unref);
 
     G_OBJECT_CLASS(pipe_output_stream_parent_class)->dispose (object);
 }

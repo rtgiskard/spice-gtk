@@ -1788,10 +1788,7 @@ end:
     g_clear_object(&s->migration);
 
     s->migrate_wait_init = FALSE;
-    if (s->after_main_init) {
-        g_source_remove(s->after_main_init);
-        s->after_main_init = 0;
-    }
+    g_clear_handle_id(&s->after_main_init, g_source_remove);
 
     spice_session_set_migration_state(session, SPICE_SESSION_MIGRATION_NONE);
 }

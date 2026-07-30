@@ -78,10 +78,7 @@ static void spice_gstaudio_dispose(GObject *obj)
     p = gstaudio->priv;
 
     stream_dispose(&p->playback);
-    if (p->rbus_watch_id > 0) {
-        g_source_remove(p->rbus_watch_id);
-        p->rbus_watch_id = 0;
-    }
+    g_clear_handle_id(&p->rbus_watch_id, g_source_remove);
     stream_dispose(&p->record);
 
     if (p->pchannel)
@@ -196,10 +193,7 @@ static void record_start(SpiceRecordChannel *channel, gint format, gint channels
         (p->record.rate != frequency ||
          p->record.channels != channels)) {
         gst_element_set_state(p->record.pipe, GST_STATE_NULL);
-        if (p->rbus_watch_id > 0) {
-            g_source_remove(p->rbus_watch_id);
-            p->rbus_watch_id = 0;
-        }
+        g_clear_handle_id(&p->rbus_watch_id, g_source_remove);
         g_clear_pointer(&p->record.pipe, gst_object_unref);
     }
 
@@ -250,10 +244,7 @@ static void playback_stop(SpiceGstaudio *gstaudio)
 
     if (p->playback.pipe)
         gst_element_set_state(p->playback.pipe, GST_STATE_READY);
-    if (p->mmtime_id != 0) {
-        g_source_remove(p->mmtime_id);
-        p->mmtime_id = 0;
-    }
+    g_clear_handle_id(&p->mmtime_id, g_source_remove);
 }
 
 static gboolean update_mmtime_timeout_cb(gpointer data)

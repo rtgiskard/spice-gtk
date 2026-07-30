@@ -110,10 +110,7 @@ static void spice_smartcard_manager_finalize(GObject *gobject)
     SpiceSmartcardManager *manager = SPICE_SMARTCARD_MANAGER(gobject);
     SpiceSmartcardManagerPrivate *priv = manager->priv;
 
-    if (priv->monitor_id != 0) {
-        g_source_remove(priv->monitor_id);
-        priv->monitor_id = 0;
-    }
+    g_clear_handle_id(&priv->monitor_id, g_source_remove);
 
 #ifdef USE_SMARTCARD
     g_clear_pointer(&priv->software_reader, vreader_free);
@@ -326,8 +323,7 @@ static gboolean smartcard_source_dispatch(GSource *source,
         event_consumed = smartcard_callback(smartcard_source->pending_event,
                                             user_data);
         if (event_consumed) {
-            vevent_delete(smartcard_source->pending_event);
-            smartcard_source->pending_event = NULL;
+            g_clear_pointer(&smartcard_source->pending_event, vevent_delete);
         }
     }
 

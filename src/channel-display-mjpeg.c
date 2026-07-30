@@ -204,10 +204,7 @@ static void spice_frame_unref_func(gpointer data, gpointer user_data)
 
 static void mjpeg_decoder_drop_queue(MJpegDecoder *decoder)
 {
-    if (decoder->timer_id != 0) {
-        g_source_remove(decoder->timer_id);
-        decoder->timer_id = 0;
-    }
+    g_clear_handle_id(&decoder->timer_id, g_source_remove);
     g_clear_pointer(&decoder->cur_frame, spice_frame_free);
     g_queue_foreach(decoder->msgq, spice_frame_unref_func, NULL);
     g_queue_clear(decoder->msgq);
@@ -252,10 +249,7 @@ static void mjpeg_decoder_reschedule(VideoDecoder *video_decoder)
     MJpegDecoder *decoder = (MJpegDecoder*)video_decoder;
 
     SPICE_DEBUG("%s", __FUNCTION__);
-    if (decoder->timer_id != 0) {
-        g_source_remove(decoder->timer_id);
-        decoder->timer_id = 0;
-    }
+    g_clear_handle_id(&decoder->timer_id, g_source_remove);
     mjpeg_decoder_schedule(decoder);
 }
 

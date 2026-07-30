@@ -96,8 +96,7 @@ static void _channel_reset_finish(SpiceUsbredirChannel *channel, gboolean migrat
 
     spice_usbredir_channel_lock(channel);
 
-    spice_usb_backend_channel_delete(priv->host);
-    priv->host = NULL;
+    g_clear_pointer(&priv->host, spice_usb_backend_channel_delete);
 
     /* Call set_context to re-create the host */
     spice_usbredir_channel_set_context(channel, priv->context);

@@ -434,8 +434,7 @@ static void data_read_cb(GObject *source_object,
 
     if (client && g_output_stream_is_closed(g_io_stream_get_output_stream(client->pipe))) {
         CHANNEL_DEBUG(self, "found client %p, but it's already closed, removing", client);
-        remove_client(client);
-        client = NULL;
+        g_clear_pointer(&client, remove_client);
     }
 
     if (client)

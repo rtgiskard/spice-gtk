@@ -313,8 +313,7 @@ void spice_set_session_option(SpiceSession *session)
                 name++;
             }
         }
-        g_strfreev(cd_share_files);
-        cd_share_files = NULL;
+        g_clear_pointer(&cd_share_files, g_strfreev);
     }
     if (disable_usbredir)
         g_object_set(session, "enable-usbredir", FALSE, NULL);

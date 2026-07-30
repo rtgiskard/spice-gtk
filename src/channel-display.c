@@ -152,10 +152,7 @@ static void spice_display_channel_dispose(GObject *object)
 {
     SpiceDisplayChannelPrivate *c = SPICE_DISPLAY_CHANNEL(object)->priv;
 
-    if (c->mark_false_event_id != 0) {
-        g_source_remove(c->mark_false_event_id);
-        c->mark_false_event_id = 0;
-    }
+    g_clear_handle_id(&c->mark_false_event_id, g_source_remove);
 
     for (int i = 0; i < c->scanout.num_planes; i++) {
         if (c->scanout.fd[i] >= 0) {
@@ -2003,10 +2000,7 @@ static void display_handle_surface_create(SpiceChannel *channel, SpiceMsgIn *in)
         SPICE_DEBUG("surface flags: %x", create->flags);
         surface->primary = true;
         create_canvas(channel, surface);
-        if (c->mark_false_event_id != 0) {
-            g_source_remove(c->mark_false_event_id);
-            c->mark_false_event_id = 0;
-        }
+        g_clear_handle_id(&c->mark_false_event_id, g_source_remove);
     } else {
         surface->primary = false;
         create_canvas(channel, surface);

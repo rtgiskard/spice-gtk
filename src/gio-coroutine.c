@@ -76,8 +76,7 @@ void g_coroutine_condition_cancel(GCoroutine *coroutine)
     if (coroutine->condition_id == 0)
         return;
 
-    g_source_remove(coroutine->condition_id);
-    coroutine->condition_id = 0;
+    g_clear_handle_id(&coroutine->condition_id, g_source_remove);
 }
 
 void g_coroutine_wakeup(GCoroutine *coroutine)

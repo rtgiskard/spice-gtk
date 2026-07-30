@@ -2082,8 +2082,7 @@ int main(int argc, char *argv[])
     if ((conf = g_key_file_to_data(keyfile, NULL, &error)) == NULL ||
         !g_file_set_contents(conf_file, conf, -1, &error)) {
         SPICE_DEBUG("Couldn't save configuration: %s", error->message);
-        g_error_free(error);
-        error = NULL;
+        g_clear_error(&error);
     }
 
     g_free(conf_file);

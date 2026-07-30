@@ -171,8 +171,7 @@ BIO* bio_new_giostream(GIOStream *stream)
             !BIO_meth_set_read(bio_gio_method, bio_gio_read) ||
             !BIO_meth_set_puts(bio_gio_method, bio_gio_puts) ||
             !BIO_meth_set_ctrl(bio_gio_method, bio_gio_ctrl)) {
-            BIO_meth_free(bio_gio_method);
-            bio_gio_method = NULL;
+            g_clear_pointer(&bio_gio_method, BIO_meth_free);
             return NULL;
         }
     }

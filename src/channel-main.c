@@ -360,20 +360,11 @@ static void spice_main_channel_dispose(GObject *obj)
 {
     SpiceMainChannelPrivate *c = SPICE_MAIN_CHANNEL(obj)->priv;
 
-    if (c->timer_id) {
-        g_source_remove(c->timer_id);
-        c->timer_id = 0;
-    }
+    g_clear_handle_id(&c->timer_id, g_source_remove);
 
-    if (c->switch_host_delayed_id) {
-        g_source_remove(c->switch_host_delayed_id);
-        c->switch_host_delayed_id = 0;
-    }
+    g_clear_handle_id(&c->switch_host_delayed_id, g_source_remove);
 
-    if (c->migrate_delayed_id) {
-        g_source_remove(c->migrate_delayed_id);
-        c->migrate_delayed_id = 0;
-    }
+    g_clear_handle_id(&c->migrate_delayed_id, g_source_remove);
 
     g_clear_pointer(&c->file_xfer_tasks, g_hash_table_unref);
     g_clear_pointer (&c->flushing, g_hash_table_unref);
@@ -1170,10 +1161,7 @@ gboolean spice_main_channel_send_monitor_config(SpiceMainChannel *channel)
     g_free(mon);
 
     spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
-    if (c->timer_id != 0) {
-        g_source_remove(c->timer_id);
-        c->timer_id = 0;
-    }
+    g_clear_handle_id(&c->timer_id, g_source_remove);
 
     return TRUE;
 }
@@ -2180,8 +2168,7 @@ static void main_handle_agent_data_msg(SpiceChannel* channel, int* msg_size, guc
 
     if (c->agent_msg_pos == sizeof(VDAgentMessage) + c->agent_msg.size) {
         main_agent_handle_msg(channel, &c->agent_msg, c->agent_msg_data);
-        g_free(c->agent_msg_data);
-        c->agent_msg_data = NULL;
+        g_clear_pointer(&c->agent_msg_data, g_free);
         c->agent_msg_pos = 0;
     }
 }

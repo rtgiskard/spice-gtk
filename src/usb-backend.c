@@ -241,10 +241,7 @@ static LRESULT CALLBACK subclass_proc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 
 static void disable_hotplug_support(SpiceUsbBackend *be)
 {
-    if (be->hWnd) {
-        DestroyWindow(be->hWnd);
-        be->hWnd = NULL;
-    }
+    g_clear_pointer(&be->hWnd, DestroyWindow);
     if (be->libusb_device_list) {
         libusb_free_device_list(be->libusb_device_list, TRUE);
         be->libusb_device_list = NULL;
@@ -450,8 +447,7 @@ SpiceUsbBackend *spice_usb_backend_new(GError **error)
         g_warning("Error initializing LIBUSB support: %s [%i]", desc, rc);
         g_set_error(error, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
             "Error initializing LIBUSB support: %s [%i]", desc, rc);
-        g_free(be);
-        be = NULL;
+        g_clear_pointer(&be, g_free);
     } else {
 #ifdef G_OS_WIN32
 #if LIBUSB_API_VERSION >= 0x01000106
@@ -497,8 +493,7 @@ void spice_usb_backend_deregister_hotplug(SpiceUsbBackend *be)
     g_atomic_int_set(&be->event_thread_run, FALSE);
     if (be->event_thread) {
         libusb_interrupt_event_handler(be->libusb_context);
-        g_thread_join(be->event_thread);
-        be->event_thread = NULL;
+        g_clear_pointer(&be->event_thread, g_thread_join);
     }
 }
 
@@ -1340,8 +1335,7 @@ spice_usb_backend_channel_new(SpiceUsbBackend *be,
     }
 
     if (!ch->parser) {
-        spice_usb_backend_channel_delete(ch);
-        ch = NULL;
+        g_clear_pointer(&ch, spice_usb_backend_channel_delete);
     }
 
     SPICE_DEBUG("%s << %p", __FUNCTION__, ch);

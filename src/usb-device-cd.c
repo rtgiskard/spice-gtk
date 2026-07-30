@@ -113,8 +113,7 @@ static int cd_device_open_stream(SpiceCdLU *unit, const char *filename)
         return -1;
     }
     if (unit->filename && filename) {
-        g_free(unit->filename);
-        unit->filename = NULL;
+        g_clear_pointer(&unit->filename, g_free);
     }
     if (filename) {
         unit->filename = g_strdup(filename);
@@ -288,8 +287,7 @@ static int cd_device_open_stream(SpiceCdLU *unit, const char *filename)
         return -1;
     }
     if (unit->filename && filename) {
-        g_free(unit->filename);
-        unit->filename = NULL;
+        g_clear_pointer(&unit->filename, g_free);
     }
     if (!filename) {
         // reopening the stream on existing file name

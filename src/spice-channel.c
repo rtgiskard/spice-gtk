@@ -2356,8 +2356,7 @@ static void spice_channel_flushed(SpiceChannel *channel, gboolean success)
         g_task_return_boolean(G_TASK(l->data), success);
     }
 
-    g_slist_free_full(c->flushing, g_object_unref);
-    c->flushing = NULL;
+    g_clear_slist(&c->flushing, g_object_unref);
 }
 
 /* coroutine context */
@@ -2877,10 +2876,7 @@ static void channel_reset(SpiceChannel *channel, gboolean migrating)
     SpiceChannelPrivate *c = channel->priv;
 
     CHANNEL_DEBUG(channel, "channel reset");
-    if (c->connect_delayed_id) {
-        g_source_remove(c->connect_delayed_id);
-        c->connect_delayed_id = 0;
-    }
+    g_clear_handle_id(&c->connect_delayed_id, g_source_remove);
 
 #ifdef HAVE_SASL
     if (c->sasl_conn) {
@@ -2909,10 +2905,7 @@ static void channel_reset(SpiceChannel *channel, gboolean migrating)
     gboolean was_empty = g_queue_is_empty(&c->xmit_queue);
     g_queue_foreach(&c->xmit_queue, (GFunc)spice_msg_out_unref, NULL);
     g_queue_clear(&c->xmit_queue);
-    if (c->xmit_queue_wakeup_id) {
-        g_source_remove(c->xmit_queue_wakeup_id);
-        c->xmit_queue_wakeup_id = 0;
-    }
+    g_clear_handle_id(&c->xmit_queue_wakeup_id, g_source_remove);
     g_mutex_unlock(&c->xmit_queue_lock);
     spice_channel_flushed(channel, was_empty);
 
