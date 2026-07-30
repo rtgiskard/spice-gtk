@@ -641,7 +641,7 @@ static void clipboard_get_targets(GtkClipboard *clipboard,
     num_types = 0;
     for (a = 0; a < n_atoms; a++) {
         guint m;
-        gchar *name = gdk_atom_name(atoms[a]);
+        g_autofree gchar *name = gdk_atom_name(atoms[a]);
 
         SPICE_DEBUG(" \"%s\"", name);
 
@@ -677,7 +677,6 @@ static void clipboard_get_targets(GtkClipboard *clipboard,
                 num_types++;
             }
         }
-        g_free(name);
     }
 
     if (num_types == 0) {
@@ -778,7 +777,7 @@ static void clipboard_got_from_guest(SpiceMainChannel *main, guint selection,
 {
     RunInfo *ri = user_data;
     SpiceGtkSessionPrivate *s = ri->self->priv;
-    gchar *conv = NULL;
+    g_autofree gchar *conv = NULL;
 
     g_return_if_fail(selection == ri->selection);
 
@@ -801,8 +800,6 @@ static void clipboard_got_from_guest(SpiceMainChannel *main, guint selection,
 
     if (g_main_loop_is_running (ri->loop))
         g_main_loop_quit (ri->loop);
-
-    g_free(conv);
 }
 
 static void clipboard_agent_connected(RunInfo *ri)
@@ -1001,7 +998,7 @@ static void clipboard_received_text_cb(GtkClipboard *clipboard,
                                        gpointer user_data)
 {
     SpiceGtkSession *self = free_weak_ref(user_data);
-    char *conv = NULL;
+    g_autofree char *conv = NULL;
     int len = 0;
     int selection;
     const guchar *data = NULL;
@@ -1038,7 +1035,6 @@ notify_agent:
                                                   VD_AGENT_CLIPBOARD_UTF8_TEXT,
                                                   data,
                                                   (data != NULL) ? len : 0);
-    g_free(conv);
 }
 
 #ifdef HAVE_PHODAV_VIRTUAL
@@ -1046,8 +1042,8 @@ notify_agent:
 static gchar *clipboard_webdav_share_file(PhodavVirtualDir *root, GFile *file)
 {
     gchar *uuid;
-    PhodavVirtualDir *dir;
-    GError *err = NULL;
+    g_autoptr(PhodavVirtualDir) dir = NULL;
+    g_autoptr(GError) err = NULL;
 
     /* separate directory is created for each file,
      * as we want to preserve the original filename and avoid conflicts */
@@ -1062,7 +1058,6 @@ static gchar *clipboard_webdav_share_file(PhodavVirtualDir *root, GFile *file)
         g_clear_pointer(&uuid, g_free);
         if (!g_error_matches(err, G_IO_ERROR, G_IO_ERROR_EXISTS)) {
             g_warning("failed to create phodav virtual dir: %s", err->message);
-            g_error_free(err);
             return NULL;
         }
         g_clear_error(&err);
@@ -1074,7 +1069,6 @@ static gchar *clipboard_webdav_share_file(PhodavVirtualDir *root, GFile *file)
     }
 
     phodav_virtual_dir_attach_real_child(dir, file);
-    g_object_unref(dir);
 
     gchar *base = g_file_get_basename(file);
     gchar *path = g_strdup_printf(SPICE_WEBDAV_CLIPBOARD_FOLDER_PATH "/%s/%s", uuid, base);
@@ -1117,7 +1111,6 @@ static gchar *strv_uris_transform_to_data(SpiceGtkSessionPrivate *s,
     PhodavVirtualDir *root;
 
     gchar **uri_ptr, *path, **paths, *data;
-    GFile *file;
     guint n;
 
     *size_out = 0;
@@ -1145,20 +1138,19 @@ static gchar *strv_uris_transform_to_data(SpiceGtkSessionPrivate *s,
     n = 1;
 
     for (uri_ptr = uris; *uri_ptr != NULL; uri_ptr++) {
-        file = g_file_new_for_uri(*uri_ptr);
+        g_autoptr(GFile) file = g_file_new_for_uri(*uri_ptr);
 
         /* clipboard data is usually requested multiple times for no obvious reasons
          * (clipboar managers to blame?), we don't want to create multiple dirs for the same file */
         path = g_hash_table_lookup(s->cb_shared_files, file);
         if (path) {
             SPICE_DEBUG("found %s with path %s", *uri_ptr, path);
-            g_object_unref(file);
         } else {
             path = clipboard_webdav_share_file(root, file);
             g_return_val_if_fail(path != NULL, NULL);
             SPICE_DEBUG("publishing %s under %s", *uri_ptr, path);
             /* file and path gets freed once the hash table gets destroyed */
-            g_hash_table_insert(s->cb_shared_files, file, path);
+            g_hash_table_insert(s->cb_shared_files, g_steal_pointer(&file), path);
         }
         paths[n] = path;
         n++;
@@ -1205,7 +1197,7 @@ static gchar *x_special_copied_files_transform_to_data(SpiceGtkSessionPrivate *s
     GtkSelectionData *selection_data, gsize *size_out)
 {
     const gchar *text;
-    gchar **lines, *data = NULL;
+    g_auto(GStrv) lines = NULL;
     GdkDragAction action;
 
     *size_out = 0;
@@ -1216,7 +1208,7 @@ static gchar *x_special_copied_files_transform_to_data(SpiceGtkSessionPrivate *s
     }
     lines = g_strsplit(text, "\n", -1);
     if (g_strv_length(lines) < 2) {
-        goto err;
+        return NULL;
     }
 
     if (g_strcmp0(lines[0], "cut") == 0) {
@@ -1224,20 +1216,18 @@ static gchar *x_special_copied_files_transform_to_data(SpiceGtkSessionPrivate *s
     } else if (g_strcmp0(lines[0], "copy") == 0) {
         action = GDK_ACTION_COPY;
     } else {
-        goto err;
+        return NULL;
     }
 
-    data = strv_uris_transform_to_data(s, &lines[1], size_out, action);
-err:
-    g_strfreev(lines);
-    return data;
+    return strv_uris_transform_to_data(s, &lines[1], size_out, action);
 }
 
 /* used with newer Nautilus */
 static gchar *nautilus_uris_transform_to_data(SpiceGtkSessionPrivate *s,
     GtkSelectionData *selection_data, gsize *size_out, gboolean *retry_out)
 {
-    gchar **lines, *text, *data = NULL;
+    g_auto(GStrv) lines = NULL;
+    g_autofree gchar *text = NULL;
     guint n_lines;
     GdkDragAction action;
 
@@ -1248,17 +1238,16 @@ static gchar *nautilus_uris_transform_to_data(SpiceGtkSessionPrivate *s,
         return NULL;
     }
     lines = g_strsplit(text, "\n", -1);
-    g_free(text);
     n_lines = g_strv_length(lines);
 
     if (n_lines < 4) {
         *retry_out = TRUE;
-        goto err;
+        return NULL;
     }
 
     if (g_strcmp0(lines[0], "x-special/nautilus-clipboard") != 0) {
         *retry_out = TRUE;
-        goto err;
+        return NULL;
     }
 
     if (g_strcmp0(lines[1], "cut") == 0) {
@@ -1266,25 +1255,22 @@ static gchar *nautilus_uris_transform_to_data(SpiceGtkSessionPrivate *s,
     } else if (g_strcmp0(lines[1], "copy") == 0) {
         action = GDK_ACTION_COPY;
     } else {
-        goto err;
+        return NULL;
     }
 
     /* the list of uris must end with \n,
      * so there must be an empty string after the split */
     if (g_strcmp0(lines[n_lines-1], "") != 0) {
-        goto err;
+        return NULL;
     }
     g_clear_pointer(&lines[n_lines-1], g_free);
 
-    data = strv_uris_transform_to_data(s, &lines[2], size_out, action);
-err:
-    g_strfreev(lines);
-    return data;
+    return strv_uris_transform_to_data(s, &lines[2], size_out, action);
 }
 
 static GdkDragAction kde_get_clipboard_action(SpiceGtkSessionPrivate *s, GtkClipboard *clipboard)
 {
-    GtkSelectionData *selection_data;
+    g_autoptr(GtkSelectionData) selection_data = NULL;
     GdkDragAction action;
     const guchar *data;
 
@@ -1320,8 +1306,8 @@ static void clipboard_received_uri_contents_cb(GtkClipboard *clipboard,
 
     init_uris_atoms();
     GdkAtom type = gtk_selection_data_get_data_type(selection_data);
-    gchar *data;
-    gsize len;
+    g_autofree gchar *data = NULL;
+    gsize len = 0;
 
     if (type == a_gnome || type == a_mate) {
         /* used by old Nautilus + many other file managers  */
@@ -1338,7 +1324,7 @@ static void clipboard_received_uri_contents_cb(GtkClipboard *clipboard,
         }
     } else if (type == a_uri_list) {
         GdkDragAction action = GDK_ACTION_COPY;
-        gchar **uris = gtk_selection_data_get_uris(selection_data);
+        g_auto(GStrv) uris = gtk_selection_data_get_uris(selection_data);
 
         /* KDE uses a separate atom to distinguish between copy and move operation */
         if (clipboard_find_atom(s, selection, a_kde_cut) != GDK_NONE) {
@@ -1346,16 +1332,12 @@ static void clipboard_received_uri_contents_cb(GtkClipboard *clipboard,
         }
 
         data = strv_uris_transform_to_data(s, uris, &len, action);
-        g_strfreev(uris);
     } else {
         g_warning("received uris in unsupported type");
-        data = NULL;
-        len = 0;
     }
 
     spice_main_channel_clipboard_selection_notify(s->main, selection,
         VD_AGENT_CLIPBOARD_FILE_LIST, (guchar *)data, len);
-    g_free(data);
 }
 #endif
 
@@ -1373,7 +1355,7 @@ static void clipboard_received_cb(GtkClipboard *clipboard,
     SpiceGtkSessionPrivate *s = self->priv;
     gint len = 0, m;
     guint32 type = VD_AGENT_CLIPBOARD_NONE;
-    gchar* name;
+    g_autofree gchar* name = NULL;
     GdkAtom atom;
     int selection;
 
@@ -1397,8 +1379,6 @@ static void clipboard_received_cb(GtkClipboard *clipboard,
         } else {
             type = atom2agent[m].vdagent;
         }
-
-        g_free(name);
     }
 
     const guchar *data = gtk_selection_data_get_data(selection_data);
