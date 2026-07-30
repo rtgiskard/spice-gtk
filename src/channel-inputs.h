@@ -121,4 +121,5 @@ SPICE_GTK_DEPRECATED_IN_0_35_FOR(spice_inputs_channel_key_press_and_release)
 void spice_inputs_key_press_and_release(SpiceInputsChannel *channel, guint scancode);
 #endif
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceInputsChannel, g_object_unref)
 G_END_DECLS

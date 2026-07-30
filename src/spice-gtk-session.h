@@ -55,4 +55,5 @@ void spice_gtk_session_copy_to_guest(SpiceGtkSession *self);
 SPICE_GTK_AVAILABLE_IN_0_8
 void spice_gtk_session_paste_from_guest(SpiceGtkSession *self);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceGtkSession, g_object_unref)
 G_END_DECLS

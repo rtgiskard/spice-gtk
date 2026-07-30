@@ -173,4 +173,5 @@ spice_usb_device_manager_allocate_device_for_file_descriptor(SpiceUsbDeviceManag
                                                              int file_descriptor,
                                                              GError **err);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceUsbDeviceManager, g_object_unref)
 G_END_DECLS

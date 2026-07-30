@@ -124,4 +124,6 @@ SpiceQmpStatus *spice_qmp_port_query_status_finish(SpiceQmpPort *self,
                                                    GAsyncResult *result,
                                                    GError **error);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceQmpStatus, spice_qmp_status_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceQmpPort, g_object_unref)
 G_END_DECLS

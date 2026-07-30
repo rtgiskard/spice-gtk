@@ -107,4 +107,5 @@ gboolean spice_smartcard_reader_remove_card(SpiceSmartcardReader *reader);
 SPICE_GTK_AVAILABLE_IN_0_20
 GList *spice_smartcard_manager_get_readers(SpiceSmartcardManager *manager);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceSmartcardManager, g_object_unref)
 G_END_DECLS

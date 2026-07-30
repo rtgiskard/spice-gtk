@@ -89,4 +89,5 @@ void spice_display_send_keys(SpiceDisplay *display, const guint *keyvals,
 SPICE_GTK_AVAILABLE_IN_ALL
 GdkPixbuf *spice_display_get_pixbuf(SpiceDisplay *display);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceDisplay, g_object_unref)
 G_END_DECLS

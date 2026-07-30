@@ -57,4 +57,5 @@ SpiceDesktopIntegration *spice_desktop_integration_get(SpiceSession *session);
 void spice_desktop_integration_inhibit_automount(SpiceDesktopIntegration *self);
 void spice_desktop_integration_uninhibit_automount(SpiceDesktopIntegration *self);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceDesktopIntegration, g_object_unref)
 G_END_DECLS

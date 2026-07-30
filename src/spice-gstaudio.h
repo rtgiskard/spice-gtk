@@ -49,4 +49,5 @@ GType spice_gstaudio_get_type(void);
 SpiceGstaudio *spice_gstaudio_new(SpiceSession *session,
                                   GMainContext *context, const char *name);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceGstaudio, g_object_unref)
 G_END_DECLS

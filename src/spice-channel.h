@@ -157,4 +157,5 @@ gint spice_channel_string_to_type(const gchar *str);
 SPICE_GTK_AVAILABLE_IN_0_24
 const GError* spice_channel_get_error(SpiceChannel *channel);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceChannel, g_object_unref)
 G_END_DECLS

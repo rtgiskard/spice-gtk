@@ -209,4 +209,6 @@ SPICE_GTK_DEPRECATED_IN_0_35_FOR(spice_display_channel_gl_draw_done)
 void spice_display_gl_draw_done(SpiceDisplayChannel *channel);
 #endif
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceGlScanout, spice_gl_scanout_free)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceDisplayChannel, g_object_unref)
 G_END_DECLS

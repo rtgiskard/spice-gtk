@@ -74,4 +74,7 @@ typedef struct _SpiceVmcStream                SpiceVmcStream;
 GType           spice_vmc_stream_get_type        (void);
 SpiceVmcStream* spice_vmc_stream_new             (SpiceChannel *channel);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceVmcStream, g_object_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceVmcOutputStream, g_object_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceVmcInputStream, g_object_unref)
 G_END_DECLS

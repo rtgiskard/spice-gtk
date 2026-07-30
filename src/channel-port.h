@@ -92,4 +92,5 @@ SPICE_GTK_DEPRECATED_IN_0_35_FOR(spice_port_channel_event)
 void spice_port_event(SpicePortChannel *port, guint8 event);
 #endif
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpicePortChannel, g_object_unref)
 G_END_DECLS
