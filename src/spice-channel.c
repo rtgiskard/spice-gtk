@@ -267,6 +267,10 @@ static void spice_channel_set_property(GObject      *gobject,
     case PROP_CHANNEL_ID:
         c->channel_id = g_value_get_int(value);
         break;
+    case PROP_TOTAL_READ_BYTES:
+    case PROP_SOCKET:
+        g_assert_not_reached();
+        break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
         break;

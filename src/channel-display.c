@@ -246,6 +246,13 @@ static void spice_display_set_property(GObject      *object,
                                        GParamSpec   *pspec)
 {
     switch (prop_id) {
+    case PROP_WIDTH:
+    case PROP_HEIGHT:
+    case PROP_MONITORS:
+    case PROP_MONITORS_MAX:
+    case PROP_GL_SCANOUT:
+        g_assert_not_reached();
+        break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
         break;

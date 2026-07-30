@@ -434,6 +434,9 @@ static void spice_display_set_property(GObject      *object,
     case PROP_KEYPRESS_DELAY:
         spice_display_set_keypress_delay(display, g_value_get_uint(value));
         break;
+    case PROP_READY:
+        g_assert_not_reached();
+        break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
         break;

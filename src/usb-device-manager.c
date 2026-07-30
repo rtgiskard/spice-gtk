@@ -432,6 +432,9 @@ static void spice_usb_device_manager_set_property(GObject       *gobject,
             g_object_notify(gobject, "redirect-on-connect");
         break;
     }
+    case PROP_FREE_CHANNELS:
+        g_assert_not_reached();
+        break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
         break;

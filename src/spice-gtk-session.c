@@ -384,6 +384,9 @@ static void spice_gtk_session_set_property(GObject      *gobject,
     case PROP_SYNC_MODIFIERS:
         s->sync_modifiers = g_value_get_boolean(value);
         break;
+    case PROP_POINTER_GRABBED:
+        g_assert_not_reached();
+        break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
         break;

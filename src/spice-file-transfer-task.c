@@ -635,6 +635,11 @@ spice_file_transfer_task_set_property(GObject *object,
         case PROP_TASK_CANCELLABLE:
             self->cancellable = g_value_dup_object(value);
             break;
+        case PROP_TASK_TOTAL_BYTES:
+        case PROP_TASK_TRANSFERRED_BYTES:
+        case PROP_TASK_PROGRESS:
+            g_assert_not_reached();
+            break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
     }

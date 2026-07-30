@@ -861,6 +861,11 @@ static void spice_session_set_property(GObject      *gobject,
         g_warning("SpiceSession:gl-scanout is only available on Unix");
 #endif
         break;
+    case PROP_UUID:
+    case PROP_NAME:
+    case PROP_WEBDAV_SERVER:
+        g_assert_not_reached();
+        break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
         break;

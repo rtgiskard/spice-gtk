@@ -249,6 +249,9 @@ spice_qmp_port_set_property(GObject *object,
         g_clear_object(&self->priv->channel);
         self->priv->channel = g_value_dup_object(value);
         break;
+    case PROP_READY:
+        g_assert_not_reached();
+        break;
 
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
