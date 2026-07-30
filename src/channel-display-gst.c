@@ -246,7 +246,7 @@ static guint32 pop_up_to_frame(SpiceGstDecoder *decoder, const SpiceGstFrame *po
  */
 static void fetch_pending_sample(SpiceGstDecoder *decoder)
 {
-    GstSample *sample = gst_app_sink_pull_sample(decoder->appsink);
+    g_autoptr(GstSample) sample = gst_app_sink_pull_sample(decoder->appsink);
     if (sample) {
         // account for the fetched sample
         decoder->pending_samples--;
@@ -271,11 +271,10 @@ static void fetch_pending_sample(SpiceGstDecoder *decoder)
             }
 
             /* The frame is now ready for display */
-            gstframe->decoded_sample = sample;
+            gstframe->decoded_sample = g_steal_pointer(&sample);
             decoder->display_frame = gstframe;
         } else {
             spice_warning("got an unexpected decoded buffer!");
-            gst_sample_unref(sample);
         }
     } else {
         // no more samples to get, possibly some sample was dropped
@@ -354,10 +353,9 @@ static void free_pipeline(SpiceGstDecoder *decoder)
         return;
     }
 
-    GstBus *bus = decoder->bus;
+    g_autoptr(GstBus) bus = decoder->bus;
     if (bus) {
         gst_bus_remove_watch(bus);
-        gst_object_unref(bus);
         decoder->bus = NULL;
     }
 
@@ -376,13 +374,12 @@ static gboolean handle_pipeline_message(GstBus *bus, GstMessage *msg, gpointer v
     switch(GST_MESSAGE_TYPE(msg)) {
     case GST_MESSAGE_ERROR: {
         GError *err = NULL;
-        gchar *debug_info = NULL;
+        g_autofree gchar *debug_info = NULL;
         gst_message_parse_error(msg, &err, &debug_info);
         spice_warning("GStreamer error from element %s: %s",
                       GST_OBJECT_NAME(msg->src), err->message);
         if (debug_info) {
             SPICE_DEBUG("debug information: %s", debug_info);
-            g_free(debug_info);
         }
         g_clear_error(&err);
 
@@ -394,7 +391,7 @@ static gboolean handle_pipeline_message(GstBus *bus, GstMessage *msg, gpointer v
         break;
     }
     case GST_MESSAGE_STREAM_START: {
-        gchar *filename = g_strdup_printf("spice-gtk-gst-pipeline-debug-%" G_GUINT32_FORMAT "-%s",
+        g_autofree gchar *filename = g_strdup_printf("spice-gtk-gst-pipeline-debug-%" G_GUINT32_FORMAT "-%s",
                                           decoder->base.stream->id,
                                           gst_opts[decoder->base.codec_type].name);
         GST_DEBUG_BIN_TO_DOT_FILE(GST_BIN(decoder->pipeline),
@@ -402,7 +399,6 @@ static gboolean handle_pipeline_message(GstBus *bus, GstMessage *msg, gpointer v
                                     | GST_DEBUG_GRAPH_SHOW_FULL_PARAMS
                                     | GST_DEBUG_GRAPH_SHOW_STATES,
                                     filename);
-        g_free(filename);
         break;
     }
     default:
@@ -416,7 +412,7 @@ static void app_source_setup(GstElement *pipeline G_GNUC_UNUSED,
                              GstElement *source,
                              SpiceGstDecoder *decoder)
 {
-    GstCaps *caps;
+    g_autoptr(GstCaps) caps = NULL;
 
     /* - We schedule the frame display ourselves so set sync=false on appsink
      *   so the pipeline decodes them as fast as possible. This will also
@@ -433,7 +429,6 @@ static void app_source_setup(GstElement *pipeline G_GNUC_UNUSED,
                  "max-bytes", G_GINT64_CONSTANT(0),
                  "block", TRUE,
                  NULL);
-    gst_caps_unref(caps);
     decoder->appsrc = GST_APP_SRC(gst_object_ref(source));
 }
 
@@ -494,9 +489,8 @@ deep_element_added_cb(GstBin *pipeline, GstBin *bin, GstElement *element,
                  gst_element_name(element));
     /* Attach a probe to the sink to update the statistics */
     if (GST_IS_BASE_SINK(element)) {
-        GstPad *pad = gst_element_get_static_pad(element, "sink");
+        g_autoptr(GstPad) pad = gst_element_get_static_pad(element, "sink");
         gst_pad_add_probe(pad, GST_PAD_PROBE_TYPE_BUFFER, sink_event_probe, decoder, NULL);
-        gst_object_unref(pad);
     }
 }
 
@@ -504,7 +498,6 @@ static gchar *find_best_hw_plugin(const gchar *dec_name)
 {
     static const char plugins[][8] = {"msdk", "va", "vaapi"};
     GstRegistry *registry;
-    GstPluginFeature *feature;
     gchar *feature_name;
     int i;
 
@@ -516,12 +509,11 @@ static gchar *find_best_hw_plugin(const gchar *dec_name)
     for (i = 0; i < G_N_ELEMENTS(plugins); i++) {
         feature_name = !dec_name ? g_strconcat(plugins[i], "postproc", NULL) :
                        g_strconcat(plugins[i], dec_name, "dec", NULL);
-        feature = gst_registry_lookup_feature(registry, feature_name);
+        g_autoptr(GstPluginFeature) feature = gst_registry_lookup_feature(registry, feature_name);
         if (!feature) {
             g_clear_pointer(&feature_name, g_free);
             continue;
         }
-        gst_object_unref(feature);
         break;
     }
     return feature_name;
@@ -557,12 +549,12 @@ static bool launch_pipeline(SpiceGstDecoder *decoder)
 
 static bool try_intel_hw_pipeline(SpiceGstDecoder *decoder)
 {
-    GstElement *pipeline = NULL, *src = NULL, *sink = NULL;
-    GstElement *parser = NULL, *hw_decoder = NULL, *vpp = NULL;
-    GstCaps *src_caps, *sink_caps;
+    g_autoptr(GstElement) pipeline = NULL, src = NULL, sink = NULL;
+    g_autoptr(GstElement) parser = NULL, hw_decoder = NULL, vpp = NULL;
+    g_autoptr(GstCaps) src_caps = NULL, sink_caps = NULL;
     int codec_type = decoder->base.codec_type;
     const gchar *dec_name = gst_opts[codec_type].name;
-    gchar *hw_dec_name, *vpp_name, *parser_name;
+    g_autofree char *hw_dec_name = NULL, *vpp_name = NULL;
     bool use_parser;
 
     use_parser = codec_type == SPICE_VIDEO_CODEC_TYPE_H264 ||
@@ -571,7 +563,7 @@ static bool try_intel_hw_pipeline(SpiceGstDecoder *decoder)
     src = gst_element_factory_make("appsrc", NULL);
     if (!src) {
         spice_warning("error upon creation of 'appsrc' element");
-        return false;
+        goto err;
     }
     sink = gst_element_factory_make("appsink", NULL);
     if (!sink) {
@@ -580,9 +572,8 @@ static bool try_intel_hw_pipeline(SpiceGstDecoder *decoder)
     }
 
     if (use_parser) {
-        parser_name = g_strconcat(dec_name, "parse", NULL);
+        g_autofree char *parser_name = g_strconcat(dec_name, "parse", NULL);
         parser = gst_element_factory_make(parser_name, NULL);
-        g_free(parser_name);
         if (!parser) {
             spice_warning("error upon creation of 'parser' element");
             goto err;
@@ -595,7 +586,6 @@ static bool try_intel_hw_pipeline(SpiceGstDecoder *decoder)
         goto err;
     }
     hw_decoder = gst_element_factory_make(hw_dec_name, NULL);
-    g_free(hw_dec_name);
     if (!hw_decoder) {
         spice_warning("error upon creation of 'decoder' element");
         goto err;
@@ -606,7 +596,6 @@ static bool try_intel_hw_pipeline(SpiceGstDecoder *decoder)
         goto err;
     }
     vpp = gst_element_factory_make(vpp_name, NULL);
-    g_free(vpp_name);
     if (!vpp) {
         spice_warning("error upon creation of 'vpp' element");
         goto err;
@@ -629,7 +618,6 @@ static bool try_intel_hw_pipeline(SpiceGstDecoder *decoder)
                  "max-bytes", G_GINT64_CONSTANT(0),
                  "block", TRUE,
                  NULL);
-    gst_caps_unref(src_caps);
     decoder->appsrc = GST_APP_SRC(gst_object_ref(src));
 
     sink_caps = gst_caps_from_string("video/x-raw,format=BGRx");
@@ -638,7 +626,6 @@ static bool try_intel_hw_pipeline(SpiceGstDecoder *decoder)
                  "sync", FALSE,
                  "drop", FALSE,
                  NULL);
-    gst_caps_unref(sink_caps);
     decoder->appsink = GST_APP_SINK(gst_object_ref(sink));
 
     if (hand_pipeline_to_widget(decoder->base.stream,
@@ -650,58 +637,37 @@ static bool try_intel_hw_pipeline(SpiceGstDecoder *decoder)
     if (use_parser) {
         gst_bin_add_many(GST_BIN(pipeline), src, parser, hw_decoder,
                          vpp, sink, NULL);
+        src = parser = hw_decoder = vpp = sink = NULL;
         if (!gst_element_link_many(src, parser, hw_decoder, vpp,
                                    sink, NULL)) {
             spice_warning("error linking elements");
-            /* No need to unref these elements anymore as their ownership
-             * would have transferred to the pipeline after gst_bin_add_many().
-             */
-            src = parser = hw_decoder = vpp = sink = NULL;
             goto err;
         }
     } else {
         gst_bin_add_many(GST_BIN(pipeline), src, hw_decoder,
                          vpp, sink, NULL);
+        src = hw_decoder = vpp = sink = NULL;
         if (!gst_element_link_many(src, hw_decoder, vpp, sink, NULL)) {
             spice_warning("error linking elements");
-            src = hw_decoder = vpp = sink = NULL;
             goto err;
         }
     }
 
-    decoder->pipeline = pipeline;
+    decoder->pipeline = g_steal_pointer(&pipeline);
     decoder->is_hw_pipeline = true;
     return launch_pipeline(decoder);
 
 err:
     g_clear_pointer(&decoder->appsink, gst_object_unref);
     g_clear_pointer(&decoder->appsrc, gst_object_unref);
-    if (pipeline) {
-        gst_object_unref(pipeline);
-    }
-    if (vpp) {
-        gst_object_unref(vpp);
-    }
-    if (hw_decoder) {
-        gst_object_unref(hw_decoder);
-    }
-    if (parser) {
-        gst_object_unref(parser);
-    }
-    if (sink) {
-        gst_object_unref(sink);
-    }
-    if (src) {
-        gst_object_unref(src);
-    }
     return false;
 }
 
 static gboolean create_pipeline(SpiceGstDecoder *decoder, bool try_hw_pipeline)
 {
-    GstElement *playbin, *sink;
+    g_autoptr(GstElement) playbin = NULL, sink = NULL;
     SpiceGstPlayFlags flags;
-    GstCaps *caps;
+    g_autoptr(GstCaps) caps = NULL;
     static bool playbin3_supported = true;
     GpuVendor vendor = spice_udev_detect_gpu(INTEL_VENDOR_ID);
 
@@ -731,7 +697,6 @@ static gboolean create_pipeline(SpiceGstDecoder *decoder, bool try_hw_pipeline)
         sink = gst_element_factory_make("appsink", "sink");
         if (sink == NULL) {
             spice_warning("error upon creation of 'appsink' element");
-            gst_object_unref(playbin);
             return FALSE;
         }
         caps = gst_caps_from_string("video/x-raw,format=BGRx");
@@ -740,12 +705,11 @@ static gboolean create_pipeline(SpiceGstDecoder *decoder, bool try_hw_pipeline)
                  "sync", FALSE,
                  "drop", FALSE,
                  NULL);
-        gst_caps_unref(caps);
         g_object_set(playbin,
                  "video-sink", gst_object_ref(sink),
                  NULL);
 
-        decoder->appsink = GST_APP_SINK(sink);
+        decoder->appsink = GST_APP_SINK(g_steal_pointer(&sink));
     } else {
         /* handle has received, it means playbin will render directly into
          * widget using the gstvideooverlay interface instead of app-sink.
@@ -758,7 +722,7 @@ static gboolean create_pipeline(SpiceGstDecoder *decoder, bool try_hw_pipeline)
          * none will make playbin to avoid of using it.
          */
         GstRegistry *registry = NULL;
-        GstPluginFeature *vaapisink = NULL;
+        g_autoptr(GstPluginFeature) vaapisink = NULL;
 
         registry = gst_registry_get();
         if (registry) {
@@ -766,7 +730,6 @@ static gboolean create_pipeline(SpiceGstDecoder *decoder, bool try_hw_pipeline)
         }
         if (vaapisink) {
             gst_plugin_feature_set_rank(vaapisink, GST_RANK_NONE);
-            gst_object_unref(vaapisink);
         }
 #endif
     }
@@ -784,7 +747,7 @@ static gboolean create_pipeline(SpiceGstDecoder *decoder, bool try_hw_pipeline)
     g_object_set(playbin, "flags", flags, NULL);
 
     g_warn_if_fail(decoder->appsrc == NULL);
-    decoder->pipeline = playbin;
+    decoder->pipeline = g_steal_pointer(&playbin);
 
     return launch_pipeline(decoder);
 }
@@ -1004,7 +967,7 @@ static void gstvideo_debug_available_decoders(int codec_type,
                                               GList *codec_decoders)
 {
     GList *l;
-    GString *msg = g_string_new(NULL);
+    g_autoptr(GString) msg = g_string_new(NULL);
     /* Print list of available decoders to make debugging easier */
     g_string_printf(msg, "From %3u video decoder elements, %2u can handle caps %12s: ",
                     g_list_length(all_decoders), g_list_length(codec_decoders),
@@ -1018,14 +981,13 @@ static void gstvideo_debug_available_decoders(int codec_type,
     /* Drop trailing ", " */
     g_string_truncate(msg, msg->len - 2);
     spice_debug("%s", msg->str);
-    g_string_free(msg, TRUE);
 }
 
 G_GNUC_INTERNAL
 gboolean gstvideo_has_codec(int codec_type)
 {
     GList *all_decoders, *codec_decoders;
-    GstCaps *caps;
+    g_autoptr(GstCaps) caps = NULL;
     GstElementFactoryListType type;
 
     g_return_val_if_fail(gstvideo_init(), FALSE);
@@ -1043,7 +1005,6 @@ gboolean gstvideo_has_codec(int codec_type)
 
     caps = gst_caps_from_string(gst_opts[codec_type].dec_caps);
     codec_decoders = gst_element_factory_list_filter(all_decoders, caps, GST_PAD_SINK, FALSE);
-    gst_caps_unref(caps);
 
     if (codec_decoders == NULL) {
         spice_debug("From %u decoders, none can handle '%s'",
