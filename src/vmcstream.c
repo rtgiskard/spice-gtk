@@ -105,12 +105,11 @@ typedef struct _complete_in_idle_cb_data {
 static void
 complete_in_idle_cb(gpointer user_data)
 {
-    complete_in_idle_cb_data *data = user_data;
+    g_autofree complete_in_idle_cb_data *data = user_data;
 
     g_task_return_int(data->task, data->pos);
 
     g_object_unref (data->task);
-    g_free (data);
 }
 
 /* coroutine */
@@ -195,7 +194,6 @@ spice_vmc_input_stream_read_all_async(GInputStream        *stream,
                                       gpointer             user_data)
 {
     SpiceVmcInputStream *self = SPICE_VMC_INPUT_STREAM(stream);
-    GTask *task;
 
     /* no concurrent read permitted by ginputstream */
     g_return_if_fail(self->task == NULL);
@@ -203,17 +201,16 @@ spice_vmc_input_stream_read_all_async(GInputStream        *stream,
     self->buffer = buffer;
     self->count = count;
     self->pos = 0;
-    task = g_task_new(self,
-                      cancellable,
-                      callback,
-                      user_data);
+    g_autoptr(GTask) task = g_task_new(self,
+                                       cancellable,
+                                       callback,
+                                       user_data);
     g_task_set_source_tag(task, spice_vmc_input_stream_read_all_async);
     if (count == 0) {
         g_task_return_int(task, 0);
-        g_object_unref(task);
         return;
     }
-    self->task = task;
+    self->task = g_steal_pointer(&task);
     if (cancellable)
         self->cancel_id =
             g_cancellable_connect(cancellable, G_CALLBACK(read_cancelled), self, NULL);
