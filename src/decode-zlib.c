@@ -56,7 +56,7 @@ static SpiceZlibDecoderOps zlib_decoder_ops = {
 
 SpiceZlibDecoder *zlib_decoder_new(void)
 {
-    GlibZlibDecoder *d = g_new0(GlibZlibDecoder, 1);
+    g_autofree GlibZlibDecoder *d = g_new0(GlibZlibDecoder, 1);
     int z_ret;
 
     d->_z_strm.zalloc = Z_NULL;
@@ -67,22 +67,18 @@ SpiceZlibDecoder *zlib_decoder_new(void)
     z_ret = inflateInit(&d->_z_strm);
     if (z_ret != Z_OK) {
         g_warning("zlib decoder init failed, error %d", z_ret);
-        goto fail;
+        return NULL;
     }
 
     d->base.ops = &zlib_decoder_ops;
 
-    return &d->base;
-
-fail:
-    g_free(d);
-    return NULL;
+    GlibZlibDecoder *ret = g_steal_pointer(&d);
+    return &ret->base;
 }
 
 void zlib_decoder_destroy(SpiceZlibDecoder *decoder)
 {
-    GlibZlibDecoder *d = SPICE_CONTAINEROF(decoder, GlibZlibDecoder, base);
+    g_autofree GlibZlibDecoder *d = SPICE_CONTAINEROF(decoder, GlibZlibDecoder, base);
 
     inflateEnd(&d->_z_strm);
-    g_free(d);
 }
