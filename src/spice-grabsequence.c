@@ -158,7 +158,7 @@ gchar *spice_grab_sequence_as_string(SpiceGrabSequence *sequence)
 		g_string_append(str, gdk_keyval_name(sequence->keysyms[i]));
 	}
 
-	return g_string_free(str, FALSE);
+	return g_string_free_and_steal(str);
 
 }
 

@@ -349,7 +349,7 @@ get_test_data(gint n)
         s = g_string_append(s, data);
 
     s = g_string_append_len(s, data, (n % 16));
-    return g_string_free(s, FALSE);
+    return g_string_free_and_steal(s);
 }
 
 static void

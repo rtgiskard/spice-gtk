@@ -368,7 +368,7 @@ qmp(SpiceQmpPort *self, GTask *task,
     g_hash_table_insert(self->priv->qmp_tasks, GINT_TO_POINTER(id), task);
 
     len = str->len;
-    data = g_string_free(str, FALSE);
+    data = g_string_free_and_steal(str);
     spice_port_channel_write_async(self->priv->channel, data, len,
                                    g_task_get_cancellable(task),
                                    spice_qmp_port_write_finished, task);

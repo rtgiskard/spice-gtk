@@ -217,7 +217,7 @@ static gchar* spice_convert_newlines(const gchar *str, gssize len,
         }
     }
 
-    return g_string_free(output, FALSE);
+    return g_string_free_and_steal(output);
 }
 
 G_GNUC_INTERNAL
