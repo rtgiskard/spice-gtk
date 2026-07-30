@@ -809,14 +809,12 @@ static void spice_main_channel_class_init(SpiceMainChannelClass *klass)
 static void agent_free_msg_queue(SpiceMainChannel *channel)
 {
     SpiceMainChannelPrivate *c = channel->priv;
-    SpiceMsgOut *out;
 
     if (!c->agent_msg_queue)
         return;
 
     while (!g_queue_is_empty(c->agent_msg_queue)) {
-        out = g_queue_pop_head(c->agent_msg_queue);
-        spice_msg_out_unref(out);
+        spice_msg_out_unref(g_queue_pop_head(c->agent_msg_queue));
     }
 
     g_clear_pointer(&c->agent_msg_queue, g_queue_free);
@@ -843,7 +841,7 @@ static void file_xfer_flush_async(SpiceFileTransferTask *xfer_task,
                                   GAsyncReadyCallback callback,
                                   gpointer user_data)
 {
-    GTask *task;
+    g_autoptr(GTask) task = NULL;
     SpiceMainChannel *channel;
     SpiceMainChannelPrivate *c;
     gboolean was_empty;
@@ -859,12 +857,12 @@ static void file_xfer_flush_async(SpiceFileTransferTask *xfer_task,
     was_empty = g_queue_is_empty(c->agent_msg_queue);
     if (was_empty) {
         g_task_return_boolean(task, TRUE);
-        g_object_unref(task);
         return;
     }
 
     /* wait until the last message currently in the queue has been sent */
-    g_hash_table_insert(c->flushing, g_queue_peek_tail(c->agent_msg_queue), task);
+    g_hash_table_insert(c->flushing, g_queue_peek_tail(c->agent_msg_queue),
+                        g_steal_pointer(&task));
 }
 
 static gboolean file_xfer_flush_finish(SpiceFileTransferTask *xfer_task,
@@ -886,7 +884,7 @@ static void agent_send_msg_queue(SpiceMainChannel *channel)
 
     while (c->agent_tokens > 0 &&
            !g_queue_is_empty(c->agent_msg_queue)) {
-        GTask *task;
+        g_autoptr(GTask) task = NULL;
         c->agent_tokens--;
         out = g_queue_pop_head(c->agent_msg_queue);
         spice_msg_out_send_internal(out);
@@ -896,7 +894,6 @@ static void agent_send_msg_queue(SpiceMainChannel *channel)
             /* if there's a flush task waiting for this message, finish it */
             g_hash_table_remove(c->flushing, out);
             g_task_return_boolean(task, TRUE);
-            g_object_unref(task);
         }
     }
     if (g_queue_is_empty(c->agent_msg_queue) &&
@@ -990,7 +987,7 @@ static void monitors_align(VDAgentMonConfig *monitors, int nmonitors)
 {
     gint i, j, x = 0;
     guint32 used = 0;
-    VDAgentMonConfig *sorted_monitors;
+    g_autofree VDAgentMonConfig *sorted_monitors = NULL;
 
     if (nmonitors == 0)
         return;
@@ -1019,7 +1016,6 @@ static void monitors_align(VDAgentMonConfig *monitors, int nmonitors)
             SPICE_DEBUG("#%d +%d+%d-%ux%u", j, monitors[j].x, monitors[j].y,
                         monitors[j].width, monitors[j].height);
     }
-    g_free(sorted_monitors);
 }
 
 
@@ -1056,7 +1052,7 @@ gboolean spice_main_send_monitor_config(SpiceMainChannel *channel)
 gboolean spice_main_channel_send_monitor_config(SpiceMainChannel *channel)
 {
     SpiceMainChannelPrivate *c;
-    VDAgentMonitorsConfig *mon;
+    g_autofree VDAgentMonitorsConfig *mon = NULL;
     int i, j, monitors;
     size_t size;
 
@@ -1124,7 +1120,6 @@ gboolean spice_main_channel_send_monitor_config(SpiceMainChannel *channel)
         monitors_align(mon->monitors, mon->num_of_monitors);
 
     agent_msg_queue(channel, VD_AGENT_MONITORS_CONFIG, size, mon);
-    g_free(mon);
 
     spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
     g_clear_handle_id(&c->timer_id, g_source_remove);
@@ -1141,19 +1136,18 @@ static void audio_playback_volume_info_cb(GObject *object, GAsyncResult *res, gp
 {
     SpiceMainChannel *main_channel = user_data;
     SpiceAudio *audio = spice_main_get_audio(main_channel);
-    VDAgentAudioVolumeSync *avs;
-    guint16 *volume;
+    g_autofree VDAgentAudioVolumeSync *avs = NULL;
+    g_autofree guint16 *volume = NULL;
     guint8 nchannels;
     gboolean mute, ret;
     gsize array_size;
-    GError *error = NULL;
+    g_autoptr(GError) error = NULL;
 
     ret = spice_audio_get_playback_volume_info_finish(audio, res, &mute, &nchannels,
                                                       &volume, &error);
     if (ret == FALSE || volume == NULL || nchannels == 0) {
         if (error != NULL) {
             SPICE_DEBUG("Failed to get playback async volume info: %s", error->message);
-            g_error_free(error);
         } else {
             SPICE_DEBUG("Failed to get playback async volume info");
         }
@@ -1170,10 +1164,8 @@ static void audio_playback_volume_info_cb(GObject *object, GAsyncResult *res, gp
 
     SPICE_DEBUG("%s mute=%s nchannels=%u volume[0]=%u",
                 __func__, spice_yes_no(mute), nchannels, volume[0]);
-    g_free(volume);
     agent_msg_queue(main_channel, VD_AGENT_AUDIO_VOLUME_SYNC,
                     sizeof(VDAgentAudioVolumeSync) + array_size, avs);
-    g_free (avs);
 }
 
 static void agent_sync_audio_playback(SpiceMainChannel *main_channel)
@@ -1198,18 +1190,17 @@ static void audio_record_volume_info_cb(GObject *object, GAsyncResult *res, gpoi
 {
     SpiceMainChannel *main_channel = user_data;
     SpiceAudio *audio = spice_main_get_audio(main_channel);
-    VDAgentAudioVolumeSync *avs;
-    guint16 *volume;
+    g_autofree VDAgentAudioVolumeSync *avs = NULL;
+    g_autofree guint16 *volume = NULL;
     guint8 nchannels;
     gboolean ret, mute;
     gsize array_size;
-    GError *error = NULL;
+    g_autoptr(GError) error = NULL;
 
     ret = spice_audio_get_record_volume_info_finish(audio, res, &mute, &nchannels, &volume, &error);
     if (ret == FALSE || volume == NULL || nchannels == 0) {
         if (error != NULL) {
             SPICE_DEBUG("Failed to get record async volume info: %s", error->message);
-            g_error_free(error);
         } else {
             SPICE_DEBUG("Failed to get record async volume info");
         }
@@ -1226,10 +1217,8 @@ static void audio_record_volume_info_cb(GObject *object, GAsyncResult *res, gpoi
 
     SPICE_DEBUG("%s mute=%s nchannels=%u volume[0]=%u",
                 __func__, spice_yes_no(mute), nchannels, volume[0]);
-    g_free(volume);
     agent_msg_queue(main_channel, VD_AGENT_AUDIO_VOLUME_SYNC,
                     sizeof(VDAgentAudioVolumeSync) + array_size, avs);
-    g_free (avs);
 }
 
 static void agent_sync_audio_record(SpiceMainChannel *main_channel)
@@ -1279,7 +1268,7 @@ static void agent_display_config(SpiceMainChannel *channel)
 static void agent_announce_caps(SpiceMainChannel *channel)
 {
     SpiceMainChannelPrivate *c = channel->priv;
-    VDAgentAnnounceCapabilities *caps;
+    g_autofree VDAgentAnnounceCapabilities *caps = NULL;
     size_t size;
 
     if (!c->agent_connected)
@@ -1301,7 +1290,6 @@ static void agent_announce_caps(SpiceMainChannel *channel)
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_CLIPBOARD_GRAB_SERIAL);
 
     agent_msg_queue(channel, VD_AGENT_ANNOUNCE_CAPABILITIES, size, caps);
-    g_free(caps);
 }
 
 /* any context: the message is not flushed immediately,
@@ -1673,12 +1661,10 @@ static void main_handle_uuid(SpiceChannel *channel, SpiceMsgIn *in)
 {
     SpiceMsgMainUuid *uuid = spice_msg_in_parsed(in);
     SpiceSession *session = spice_channel_get_session(channel);
-    gchar *uuid_str = spice_uuid_to_string(uuid->uuid);
+    g_autofree gchar *uuid_str = spice_uuid_to_string(uuid->uuid);
 
     SPICE_DEBUG("server uuid: %s", uuid_str);
     spice_session_set_uuid(session, uuid->uuid);
-
-    g_free(uuid_str);
 }
 
 /* coroutine context */
@@ -1902,13 +1888,11 @@ static void main_agent_handle_xfer_status(SpiceMainChannel *channel,
             break;
         }
 
-        gchar *free_space_str = g_format_size(err->disk_free_space);
-        gchar *file_size_str = g_format_size(spice_file_transfer_task_get_total_bytes(xfer_task));
+        g_autofree gchar *free_space_str = g_format_size(err->disk_free_space);
+        g_autofree gchar *file_size_str = g_format_size(spice_file_transfer_task_get_total_bytes(xfer_task));
         error = g_error_new(SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
                             _("File transfer failed due to lack of free space on remote machine "
                             "(%s free, %s to transfer)"), free_space_str, file_size_str);
-        g_free(free_space_str);
-        g_free(file_size_str);
         break;
     }
     case VD_AGENT_FILE_XFER_STATUS_SESSION_LOCKED:
@@ -2198,6 +2182,8 @@ spice_migrate_unref(spice_migrate *mig)
     }
 }
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(spice_migrate, spice_migrate_unref)
+
 static inline void
 spice_migrate_idle_add(gboolean (*func)(spice_migrate *mig), spice_migrate *mig)
 {
@@ -2383,7 +2369,7 @@ static void main_migrate_connect(SpiceChannel *channel,
 {
     SpiceMainChannelPrivate *main_priv = SPICE_MAIN_CHANNEL(channel)->priv;
     int reply_type = SPICE_MSGC_MAIN_MIGRATE_CONNECT_ERROR;
-    spice_migrate *mig;
+    g_autoptr(spice_migrate) mig = NULL;
     SpiceMsgOut *out;
     SpiceSession *session;
 
@@ -2439,7 +2425,6 @@ end:
     CHANNEL_DEBUG(channel, "migrate connect reply %d", reply_type);
     out = spice_msg_out_new(channel, reply_type);
     spice_msg_out_send(out);
-    spice_migrate_unref(mig);
 }
 
 /* coroutine context */
@@ -3117,17 +3102,17 @@ void spice_main_set_display_enabled(SpiceMainChannel *channel, int id, gboolean 
 
 static void file_xfer_init_task_async_cb(GObject *obj, GAsyncResult *res, gpointer data)
 {
-    GFileInfo *info;
+    g_autoptr(GFileInfo) info = NULL;
     SpiceFileTransferTask *xfer_task;
     SpiceMainChannel *channel;
-    gchar *string;
+    g_autofree gchar *string = NULL;
     const gchar *basename;
-    GKeyFile *keyfile;
+    g_autoptr(GKeyFile) keyfile = NULL;
     VDAgentFileXferStartMessage msg;
     guint64 file_size;
     gsize data_len;
     FileTransferOperation *xfer_op;
-    GError *error = NULL;
+    g_autoptr(GError) error = NULL;
 
     xfer_task = SPICE_FILE_TRANSFER_TASK(obj);
 
@@ -3149,7 +3134,6 @@ static void file_xfer_init_task_async_cb(GObject *obj, GAsyncResult *res, gpoint
     /* Save keyfile content to memory. TODO: more file attributions
        need to be sent to guest */
     string = g_key_file_to_data(keyfile, &data_len, &error);
-    g_key_file_free(keyfile);
     if (error)
         goto failed;
 
@@ -3158,13 +3142,10 @@ static void file_xfer_init_task_async_cb(GObject *obj, GAsyncResult *res, gpoint
     agent_msg_queue_many(channel, VD_AGENT_FILE_XFER_START,
                          &msg, sizeof(msg),
                          string, data_len + 1, NULL);
-    g_free(string);
     spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
-    g_object_unref(info);
     return;
 
 failed:
-    g_clear_object(&info);
     spice_file_transfer_task_completed(xfer_task, g_steal_pointer(&error));
 }
 
