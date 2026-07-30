@@ -36,10 +36,10 @@ static const struct {
 
 static void test_dos2unix(void)
 {
-    gchar *tmp;
     unsigned int i;
 
     for (i = 0; i < G_N_ELEMENTS(dosunix); i++) {
+        g_autofree gchar *tmp = NULL;
         if (!(dosunix[i].flags & DOS2UNIX))
             continue;
 
@@ -50,16 +50,15 @@ static void test_dos2unix(void)
         /* including ending \0 */
         tmp = spice_dos2unix(dosunix[i].d, strlen(dosunix[i].d) + 1);
         g_assert_cmpstr(tmp, ==, dosunix[i].u);
-        g_free(tmp);
     }
 }
 
 static void test_unix2dos(void)
 {
-    gchar *tmp;
     unsigned int i;
 
     for (i = 0; i < G_N_ELEMENTS(dosunix); i++) {
+        g_autofree gchar *tmp = NULL;
         if (!(dosunix[i].flags & UNIX2DOS))
             continue;
 
@@ -70,7 +69,6 @@ static void test_unix2dos(void)
         /* including ending \0 */
         tmp = spice_unix2dos(dosunix[i].u, strlen(dosunix[i].u) + 1);
         g_assert_cmpstr(tmp, ==, dosunix[i].d);
-        g_free(tmp);
     }
 }
 
@@ -134,12 +132,11 @@ static void test_set_bit(void)
         }
     };
     unsigned int i, j, bit;
-    guint8 *dest;
     unsigned int bytes;
 
     for (i = 0 ; i < G_N_ELEMENTS(tests); ++i) {
         bytes = (tests[i].len + 7) / 8;
-        dest = g_malloc0(bytes);
+        g_autofree guint8 *dest = g_malloc0(bytes);
         for (j = 0 ; j < tests[i].len;) {
             for (bit = 0 ; bit < 8 && j < tests[i].len; ++bit, ++j) {
                 set_bit(&dest[j / 8], bit, tests[i].src[j] == '0' ? 0 : 1);
@@ -148,7 +145,6 @@ static void test_set_bit(void)
         for (j = 0 ; j < bytes; ++j) {
             g_assert(dest[j] == (guchar) tests[i].dest[j]);
         }
-        g_free(dest);
     }
 }
 
@@ -156,10 +152,6 @@ static void test_mono_edge_highlight(void)
 {
     unsigned int i;
     int j, bit;
-    guint8 *and;
-    guint8 *xor;
-    guint8 *dest;
-    guint8 *dest_correct;
     int size, pixels;
 
     test_set_bit();
@@ -167,10 +159,10 @@ static void test_mono_edge_highlight(void)
     for (i = 0 ; i < G_N_ELEMENTS(mono); ++i) {
         pixels = mono[i].width * mono[i].height;
         size = (pixels + 7) / 8;
-        and = g_malloc0(size);
-        xor = g_malloc0(size);
-        dest = g_malloc0(pixels * 4);
-        dest_correct = g_malloc(pixels * 4);
+        g_autofree guint8 *and = g_malloc0(size);
+        g_autofree guint8 *xor = g_malloc0(size);
+        g_autofree guint8 *dest = g_malloc0(pixels * 4);
+        g_autofree guint8 *dest_correct = g_malloc(pixels * 4);
         for (j = 0 ; j < pixels;) {
             for (bit = 0; bit < 8 && j < pixels; ++bit, ++j) {
                 set_bit(&and[j / 8], bit, mono[i].and[j] == '0' ? 0 : 1);
@@ -184,10 +176,6 @@ static void test_mono_edge_highlight(void)
         for (j = 0; j < pixels; ++j) {
             g_assert(dest[j] == dest_correct[j]);
         }
-        g_free(and);
-        g_free(xor);
-        g_free(dest);
-        g_free(dest_correct);
     }
 }
 
