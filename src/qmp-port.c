@@ -250,10 +250,6 @@ spice_qmp_port_set_property(GObject *object,
     case PROP_READY:
         g_assert_not_reached();
         break;
-
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
-        break;
     }
 }
 
@@ -272,10 +268,6 @@ spice_qmp_port_get_property(GObject *object,
 
     case PROP_READY:
         g_value_set_boolean(value, self->priv->ready);
-        break;
-
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
         break;
     }
 }

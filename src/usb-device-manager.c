@@ -352,9 +352,6 @@ static void spice_usb_device_manager_get_property(GObject     *gobject,
         g_value_set_int(value, free_channels);
         break;
     }
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
-        break;
     }
 }
 
@@ -435,9 +432,6 @@ static void spice_usb_device_manager_set_property(GObject       *gobject,
     }
     case PROP_FREE_CHANNELS:
         g_assert_not_reached();
-        break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
         break;
     }
 }

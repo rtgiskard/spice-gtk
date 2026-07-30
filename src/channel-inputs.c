@@ -88,9 +88,6 @@ static void spice_inputs_get_property(GObject    *object,
     case PROP_KEY_MODIFIERS:
         g_value_set_int(value, c->modifiers);
         break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
-        break;
     }
 }
 

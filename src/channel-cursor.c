@@ -161,9 +161,6 @@ static void spice_cursor_channel_get_property(GObject    *object,
     case PROP_CURSOR:
         g_value_set_static_boxed(value, c->last_cursor.data ? &c->last_cursor : NULL);
         break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
-        break;
     }
 }
 

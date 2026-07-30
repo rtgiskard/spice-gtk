@@ -108,9 +108,6 @@ static void spice_usb_device_widget_get_property(GObject *gobject,
     case PROP_DEVICE_FORMAT_STRING:
         g_value_set_string(value, priv->device_format_string);
         break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
-        break;
     }
 }
 
@@ -128,9 +125,6 @@ static void spice_usb_device_widget_set_property(GObject *gobject,
         break;
     case PROP_DEVICE_FORMAT_STRING:
         priv->device_format_string = g_value_dup_string(value);
-        break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
         break;
     }
 }

@@ -79,9 +79,6 @@ static void spice_audio_get_property(GObject *gobject,
     case PROP_MAIN_CONTEXT:
         g_value_set_boxed(value, priv->main_context);
         break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
-        break;
     }
 }
 
@@ -99,9 +96,6 @@ static void spice_audio_set_property(GObject *gobject,
         break;
     case PROP_MAIN_CONTEXT:
         priv->main_context = g_value_dup_boxed(value);
-        break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
         break;
     }
 }

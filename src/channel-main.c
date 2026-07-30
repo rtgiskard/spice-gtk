@@ -317,9 +317,6 @@ static void spice_main_get_property(GObject    *object,
     case PROP_MAX_CLIPBOARD:
         g_value_set_int(value, spice_main_get_max_clipboard(self));
         break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
-        break;
     }
 }
 
@@ -351,12 +348,10 @@ static void spice_main_set_property(GObject *gobject, guint prop_id,
     case PROP_MAX_CLIPBOARD:
         spice_main_set_max_clipboard(self, g_value_get_int(value));
         break;
+    case PROP_AGENT_CAPS_0:
     case PROP_MOUSE_MODE:
     case PROP_AGENT_CONNECTED:
         g_assert_not_reached();
-        break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
         break;
     }
 }

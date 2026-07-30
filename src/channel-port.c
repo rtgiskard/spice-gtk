@@ -95,9 +95,6 @@ static void spice_port_get_property(GObject    *object,
     case PROP_PORT_OPENED:
         g_value_set_boolean(value, c->opened);
         break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
-        break;
     }
 }
 

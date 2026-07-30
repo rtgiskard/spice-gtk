@@ -235,9 +235,6 @@ static void spice_display_get_property(GObject    *object,
         g_value_set_static_boxed(value, spice_display_channel_get_gl_scanout(channel));
         break;
     }
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
-        break;
     }
 }
 
@@ -253,9 +250,6 @@ static void spice_display_set_property(GObject      *object,
     case PROP_MONITORS_MAX:
     case PROP_GL_SCANOUT:
         g_assert_not_reached();
-        break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
         break;
     }
 }
