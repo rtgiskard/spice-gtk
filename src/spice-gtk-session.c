@@ -406,12 +406,9 @@ static void spice_gtk_session_class_init(SpiceGtkSessionClass *klass)
      * Since: 0.8
      **/
     props[PROP_SESSION] = g_param_spec_object("session",
-                                              "Session",
-                                              "SpiceSession",
+                                              NULL, NULL,
                                               SPICE_TYPE_SESSION,
-                                              G_PARAM_READWRITE |
-                                              G_PARAM_CONSTRUCT_ONLY |
-                                              G_PARAM_STATIC_STRINGS);
+                                              G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceGtkSession:auto-clipboard:
@@ -422,13 +419,9 @@ static void spice_gtk_session_class_init(SpiceGtkSessionClass *klass)
      * Since: 0.8
      **/
     props[PROP_AUTO_CLIPBOARD] = g_param_spec_boolean("auto-clipboard",
-                                                      "Auto clipboard",
-                                                      "Automatically relay clipboard changes between "
-                                                      "host and guest.",
+                                                      NULL, NULL,
                                                       TRUE,
-                                                      G_PARAM_READWRITE |
-                                                      G_PARAM_CONSTRUCT |
-                                                      G_PARAM_STATIC_STRINGS);
+                                                      G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceGtkSession:auto-usbredir:
@@ -440,13 +433,9 @@ static void spice_gtk_session_class_init(SpiceGtkSessionClass *klass)
      * Since: 0.8
      **/
     props[PROP_AUTO_USBREDIR] = g_param_spec_boolean("auto-usbredir",
-                                                     "Auto USB Redirection",
-                                                     "Automatically redirect newly plugged in USB"
-                                                     "Devices to the guest.",
+                                                     NULL, NULL,
                                                      FALSE,
-                                                     G_PARAM_READWRITE |
-                                                     G_PARAM_CONSTRUCT |
-                                                     G_PARAM_STATIC_STRINGS);
+                                                     G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceGtkSession:pointer-grabbed:
@@ -456,11 +445,9 @@ static void spice_gtk_session_class_init(SpiceGtkSessionClass *klass)
      * Since: 0.27
      **/
     props[PROP_POINTER_GRABBED] = g_param_spec_boolean("pointer-grabbed",
-                                                       "Pointer grabbed",
-                                                       "Whether the pointer is grabbed",
+                                                       NULL, NULL,
                                                        FALSE,
-                                                       G_PARAM_READABLE |
-                                                       G_PARAM_STATIC_STRINGS);
+                                                       G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceGtkSession:sync-modifiers:
@@ -470,12 +457,9 @@ static void spice_gtk_session_class_init(SpiceGtkSessionClass *klass)
      * Since: 0.32
      **/
     props[PROP_SYNC_MODIFIERS] = g_param_spec_boolean("sync-modifiers",
-                                                      "Sync modifiers",
-                                                      "Automatically sync modifiers",
+                                                      NULL, NULL,
                                                       TRUE,
-                                                      G_PARAM_READWRITE |
-                                                      G_PARAM_CONSTRUCT |
-                                                      G_PARAM_STATIC_STRINGS);
+                                                      G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 }

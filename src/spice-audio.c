@@ -114,17 +114,16 @@ static void spice_audio_class_init(SpiceAudioClass *klass)
      * #SpiceSession this #SpiceAudio is associated with
      *
      **/
-    props[PROP_SESSION] = g_param_spec_object("session", "Session", "SpiceSession",
+    props[PROP_SESSION] = g_param_spec_object("session", NULL, NULL,
                                               SPICE_TYPE_SESSION,
-                                              G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+                                              G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceAudio:main-context:
      */
-    props[PROP_MAIN_CONTEXT] = g_param_spec_boxed("main-context", "Main Context",
-                                                  "GMainContext to use for the event source",
+    props[PROP_MAIN_CONTEXT] = g_param_spec_boxed("main-context", NULL, NULL,
                                                   G_TYPE_MAIN_CONTEXT,
-                                                  G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+                                                  G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 }

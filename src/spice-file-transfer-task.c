@@ -711,11 +711,9 @@ spice_file_transfer_task_class_init(SpiceFileTransferTaskClass *klass)
      * Since: 0.31
      **/
     props[PROP_TASK_ID] = g_param_spec_uint("id",
-                                            "id",
-                                            "The id of the task",
+                                            NULL, NULL,
                                             0, G_MAXUINT, 0,
-                                            G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                                            G_PARAM_STATIC_STRINGS);
+                                            G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceFileTransferTask:channel:
@@ -725,11 +723,9 @@ spice_file_transfer_task_class_init(SpiceFileTransferTaskClass *klass)
      * Since: 0.31
      **/
     props[PROP_TASK_CHANNEL] = g_param_spec_object("channel",
-                                                   "channel",
-                                                   "The channel transferring the file",
+                                                   NULL, NULL,
                                                    SPICE_TYPE_MAIN_CHANNEL,
-                                                   G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                                                   G_PARAM_STATIC_STRINGS);
+                                                   G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceFileTransferTask:cancellable:
@@ -739,11 +735,9 @@ spice_file_transfer_task_class_init(SpiceFileTransferTaskClass *klass)
      * Since: 0.31
      **/
     props[PROP_TASK_CANCELLABLE] = g_param_spec_object("cancellable",
-                                                       "cancellable",
-                                                       "The object used to cancel the task",
+                                                       NULL, NULL,
                                                        G_TYPE_CANCELLABLE,
-                                                       G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                                                       G_PARAM_STATIC_STRINGS);
+                                                       G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceFileTransferTask:file:
@@ -753,11 +747,9 @@ spice_file_transfer_task_class_init(SpiceFileTransferTaskClass *klass)
      * Since: 0.31
      **/
     props[PROP_TASK_FILE] = g_param_spec_object("file",
-                                                "File",
-                                                "The file being transferred",
+                                                NULL, NULL,
                                                 G_TYPE_FILE,
-                                                G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                                                G_PARAM_STATIC_STRINGS);
+                                                G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceFileTransferTask:total-bytes:
@@ -767,11 +759,9 @@ spice_file_transfer_task_class_init(SpiceFileTransferTaskClass *klass)
      * Since: 0.33
      **/
     props[PROP_TASK_TOTAL_BYTES] = g_param_spec_uint64("total-bytes",
-                                                       "Total bytes",
-                                                       "The size in bytes of the file transferred",
+                                                       NULL, NULL,
                                                        0, G_MAXUINT64, 0,
-                                                       G_PARAM_READABLE |
-                                                       G_PARAM_STATIC_STRINGS);
+                                                       G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
 
     /**
@@ -782,11 +772,9 @@ spice_file_transfer_task_class_init(SpiceFileTransferTaskClass *klass)
      * Since: 0.33
      **/
     props[PROP_TASK_TRANSFERRED_BYTES] = g_param_spec_uint64("transferred-bytes",
-                                                             "Transferred bytes",
-                                                             "The number of bytes transferred",
+                                                             NULL, NULL,
                                                              0, G_MAXUINT64, 0,
-                                                             G_PARAM_READABLE |
-                                                             G_PARAM_STATIC_STRINGS);
+                                                             G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
 
     /**
@@ -799,11 +787,9 @@ spice_file_transfer_task_class_init(SpiceFileTransferTaskClass *klass)
      * Since: 0.31
      **/
     props[PROP_TASK_PROGRESS] = g_param_spec_double("progress",
-                                                    "Progress",
-                                                    "The percentage of the file transferred",
+                                                    NULL, NULL,
                                                     0.0, 1.0, 0.0,
-                                                    G_PARAM_READABLE |
-                                                    G_PARAM_STATIC_STRINGS);
+                                                    G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     g_object_class_install_properties(object_class, G_N_ELEMENTS(props), props);
 

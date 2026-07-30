@@ -182,11 +182,9 @@ static void spice_cursor_channel_class_init(SpiceCursorChannelClass *klass)
      * Since: 0.34
      */
     props[PROP_CURSOR] = g_param_spec_boxed("cursor",
-                                            "Last cursor shape",
-                                            "Last cursor shape received from the server",
+                                            NULL, NULL,
                                             SPICE_TYPE_CURSOR_SHAPE,
-                                            G_PARAM_READABLE |
-                                            G_PARAM_STATIC_STRINGS);
+                                            G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
     /**

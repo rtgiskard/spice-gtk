@@ -176,24 +176,18 @@ static void spice_record_channel_class_init(SpiceRecordChannelClass *klass)
     channel_class->channel_reset = channel_reset;
 
     props[PROP_NCHANNELS] = g_param_spec_uint("nchannels",
-                                              "Number of Channels",
-                                              "Number of Channels",
+                                              NULL, NULL,
                                               0, G_MAXUINT8, 2,
-                                              G_PARAM_READABLE |
-                                              G_PARAM_STATIC_STRINGS);
+                                              G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     props[PROP_VOLUME] = g_param_spec_pointer("volume",
-                                              "Record volume",
-                                              "Record volume",
-                                              G_PARAM_READWRITE |
-                                              G_PARAM_STATIC_STRINGS);
+                                              NULL, NULL,
+                                              G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     props[PROP_MUTE] = g_param_spec_boolean("mute",
-                                            "Mute",
-                                            "Mute",
+                                            NULL, NULL,
                                             FALSE,
-                                            G_PARAM_READWRITE |
-                                            G_PARAM_STATIC_STRINGS);
+                                            G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
     /**

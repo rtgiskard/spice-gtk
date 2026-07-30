@@ -128,16 +128,14 @@ static void spice_port_channel_class_init(SpicePortChannelClass *klass)
     channel_class->channel_reset = spice_port_channel_reset;
 
     props[PROP_PORT_NAME] = g_param_spec_string("port-name",
-                                                "Port name",
-                                                "Port name",
+                                                NULL, NULL,
                                                 NULL,
-                                                G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
+                                                G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     props[PROP_PORT_OPENED] = g_param_spec_boolean("port-opened",
-                                                   "Port opened",
-                                                   "Port opened",
+                                                   NULL, NULL,
                                                    FALSE,
-                                                   G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
+                                                   G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 

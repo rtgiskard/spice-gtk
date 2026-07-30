@@ -276,18 +276,14 @@ static void spice_display_channel_class_init(SpiceDisplayChannelClass *klass)
     channel_class->channel_reset = spice_display_channel_reset;
 
     props[PROP_HEIGHT] = g_param_spec_uint("height",
-                                           "Display height",
-                                           "The primary surface height",
+                                           NULL, NULL,
                                            0, G_MAXUINT, 0,
-                                           G_PARAM_READABLE |
-                                           G_PARAM_STATIC_STRINGS);
+                                           G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     props[PROP_WIDTH] = g_param_spec_uint("width",
-                                          "Display width",
-                                          "The primary surface width",
+                                          NULL, NULL,
                                           0, G_MAXUINT, 0,
-                                          G_PARAM_READABLE |
-                                          G_PARAM_STATIC_STRINGS);
+                                          G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceDisplayChannel:monitors: (type GArray(SpiceDisplayMonitorConfig))
@@ -297,11 +293,9 @@ static void spice_display_channel_class_init(SpiceDisplayChannelClass *klass)
      * Since: 0.13
      */
     props[PROP_MONITORS] = g_param_spec_boxed("monitors",
-                                              "Display monitors",
-                                              "The monitors configuration",
+                                              NULL, NULL,
                                               G_TYPE_ARRAY,
-                                              G_PARAM_READABLE |
-                                              G_PARAM_STATIC_STRINGS);
+                                              G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceDisplayChannel:monitors-max:
@@ -313,11 +307,9 @@ static void spice_display_channel_class_init(SpiceDisplayChannelClass *klass)
      * Since: 0.13
      */
     props[PROP_MONITORS_MAX] = g_param_spec_uint("monitors-max",
-                                                 "Max display monitors",
-                                                 "The current maximum number of monitors",
+                                                 NULL, NULL,
                                                  1, MONITORS_MAX, 1,
-                                                 G_PARAM_READABLE |
-                                                 G_PARAM_STATIC_STRINGS);
+                                                 G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceDisplayChannel:gl-scanout:
@@ -327,11 +319,9 @@ static void spice_display_channel_class_init(SpiceDisplayChannelClass *klass)
      * Since: 0.31
      */
     props[PROP_GL_SCANOUT] = g_param_spec_boxed("gl-scanout",
-                                                "GL scanout",
-                                                "GL scanout",
+                                                NULL, NULL,
                                                 SPICE_TYPE_GL_SCANOUT,
-                                                G_PARAM_READABLE |
-                                                G_PARAM_STATIC_STRINGS);
+                                                G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 

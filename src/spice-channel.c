@@ -288,35 +288,24 @@ static void spice_channel_class_init(SpiceChannelClass *klass)
     klass->handle_msg           = spice_channel_handle_msg;
 
     props[PROP_SESSION] = g_param_spec_object("spice-session",
-                                              "Spice session",
-                                              "Spice session",
+                                              NULL, NULL,
                                               SPICE_TYPE_SESSION,
-                                              G_PARAM_READWRITE |
-                                              G_PARAM_CONSTRUCT_ONLY |
-                                              G_PARAM_STATIC_STRINGS);
+                                              G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_NAME);
 
     props[PROP_CHANNEL_TYPE] = g_param_spec_int("channel-type",
-                                                "Channel type",
-                                                "Channel type",
+                                                NULL, NULL,
                                                 -1, INT_MAX, -1,
-                                                G_PARAM_READWRITE |
-                                                G_PARAM_CONSTRUCT_ONLY |
-                                                G_PARAM_STATIC_STRINGS);
+                                                G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_NAME);
 
     props[PROP_CHANNEL_ID] = g_param_spec_int("channel-id",
-                                              "Channel ID",
-                                              "Channel ID",
+                                              NULL, NULL,
                                               -1, INT_MAX, -1,
-                                              G_PARAM_READWRITE |
-                                              G_PARAM_CONSTRUCT_ONLY |
-                                              G_PARAM_STATIC_STRINGS);
+                                              G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_NAME);
 
     props[PROP_TOTAL_READ_BYTES] = g_param_spec_ulong("total-read-bytes",
-                                                      "Total read bytes",
-                                                      "Total read bytes",
+                                                      NULL, NULL,
                                                       0, G_MAXULONG, 0,
-                                                      G_PARAM_READABLE |
-                                                      G_PARAM_STATIC_STRINGS);
+                                                      G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceChannel:socket:
@@ -329,11 +318,9 @@ static void spice_channel_class_init(SpiceChannelClass *klass)
      * Since: 0.33
      */
     props[PROP_SOCKET] = g_param_spec_object("socket",
-                                             "Socket",
-                                             "Underlying GSocket",
+                                             NULL, NULL,
                                              G_TYPE_SOCKET,
-                                             G_PARAM_READABLE |
-                                             G_PARAM_STATIC_STRINGS);
+                                             G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 

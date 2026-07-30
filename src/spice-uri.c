@@ -392,47 +392,37 @@ static void spice_uri_class_init(SpiceURIClass *klass)
     g_object_class_install_property(G_OBJECT_CLASS (klass),
                                     SPICE_URI_SCHEME,
                                     g_param_spec_string ("scheme",
-                                                         "scheme",
-                                                         "scheme",
+                                                         NULL, NULL,
                                                          NULL,
-                                                         G_PARAM_STATIC_STRINGS |
-                                                         G_PARAM_READWRITE));
+                                                         G_PARAM_READWRITE | G_PARAM_STATIC_NAME));
 
     g_object_class_install_property(G_OBJECT_CLASS (klass),
                                     SPICE_URI_HOSTNAME,
                                     g_param_spec_string ("hostname",
-                                                         "hostname",
-                                                         "hostname",
+                                                         NULL, NULL,
                                                          NULL,
-                                                         G_PARAM_STATIC_STRINGS |
-                                                         G_PARAM_READWRITE));
+                                                         G_PARAM_READWRITE | G_PARAM_STATIC_NAME));
 
     g_object_class_install_property(G_OBJECT_CLASS (klass),
                                     SPICE_URI_PORT,
                                     g_param_spec_uint ("port",
-                                                       "port",
-                                                       "port",
+                                                       NULL, NULL,
                                                        0, G_MAXUINT, 0,
-                                                       G_PARAM_STATIC_STRINGS |
-                                                       G_PARAM_READWRITE));
+                                                       G_PARAM_READWRITE | G_PARAM_STATIC_NAME));
 
     g_object_class_install_property(G_OBJECT_CLASS (klass),
                                     SPICE_URI_USER,
                                     g_param_spec_string ("user",
-                                                         "user",
-                                                         "user",
+                                                         NULL, NULL,
                                                          NULL,
-                                                         G_PARAM_STATIC_STRINGS |
-                                                         G_PARAM_READWRITE));
+                                                         G_PARAM_READWRITE | G_PARAM_STATIC_NAME));
 
     g_object_class_install_property(G_OBJECT_CLASS (klass),
                                     SPICE_URI_PASSWORD,
                                     g_param_spec_string ("password",
-                                                         "password",
-                                                         "password",
+                                                         NULL, NULL,
                                                          NULL,
-                                                         G_PARAM_STATIC_STRINGS |
-                                                         G_PARAM_READWRITE));
+                                                         G_PARAM_READWRITE | G_PARAM_STATIC_NAME));
 }
 
 /**

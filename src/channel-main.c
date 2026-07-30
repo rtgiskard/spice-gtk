@@ -475,63 +475,39 @@ static void spice_main_channel_class_init(SpiceMainChannelClass *klass)
      * position and shape commands.
      **/
     props[PROP_MOUSE_MODE] = g_param_spec_int("mouse-mode",
-                                              "Mouse mode",
-                                              "Mouse mode",
+                                              NULL, NULL,
                                               0, INT_MAX, 0,
-                                              G_PARAM_READABLE |
-                                              G_PARAM_STATIC_NAME |
-                                              G_PARAM_STATIC_NICK |
-                                              G_PARAM_STATIC_BLURB);
+                                              G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     props[PROP_AGENT_CONNECTED] = g_param_spec_boolean("agent-connected",
-                                                       "Agent connected",
-                                                       "Whether the agent is connected",
+                                                       NULL, NULL,
                                                        FALSE,
-                                                       G_PARAM_READABLE |
-                                                       G_PARAM_STATIC_NAME |
-                                                       G_PARAM_STATIC_NICK |
-                                                       G_PARAM_STATIC_BLURB);
+                                                       G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     props[PROP_AGENT_CAPS_0] = g_param_spec_int("agent-caps-0",
-                                                "Agent caps 0",
-                                                "Agent capability bits 0 -> 31",
+                                                NULL, NULL,
                                                 0, INT_MAX, 0,
-                                                G_PARAM_READABLE |
-                                                G_PARAM_STATIC_NAME |
-                                                G_PARAM_STATIC_NICK |
-                                                G_PARAM_STATIC_BLURB);
+                                                G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     props[PROP_DISPLAY_DISABLE_WALLPAPER] = g_param_spec_boolean("disable-wallpaper",
-                                                                 "Disable guest wallpaper",
-                                                                 "Disable guest wallpaper",
+                                                                 NULL, NULL,
                                                                  FALSE,
-                                                                 G_PARAM_READWRITE |
-                                                                 G_PARAM_CONSTRUCT |
-                                                                 G_PARAM_STATIC_STRINGS);
+                                                                 G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     props[PROP_DISPLAY_DISABLE_FONT_SMOOTH] = g_param_spec_boolean("disable-font-smooth",
-                                                                   "Disable guest font smooth",
-                                                                   "Disable guest font smoothing",
+                                                                   NULL, NULL,
                                                                    FALSE,
-                                                                   G_PARAM_READWRITE |
-                                                                   G_PARAM_CONSTRUCT |
-                                                                   G_PARAM_STATIC_STRINGS);
+                                                                   G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     props[PROP_DISPLAY_DISABLE_ANIMATION] = g_param_spec_boolean("disable-animation",
-                                                                 "Disable guest animations",
-                                                                 "Disable guest animations",
+                                                                 NULL, NULL,
                                                                  FALSE,
-                                                                 G_PARAM_READWRITE |
-                                                                 G_PARAM_CONSTRUCT |
-                                                                 G_PARAM_STATIC_STRINGS);
+                                                                 G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     props[PROP_DISABLE_DISPLAY_POSITION] = g_param_spec_boolean("disable-display-position",
-                                                                "Disable display position",
-                                                                "Disable using display position when setting monitor config",
+                                                                NULL, NULL,
                                                                 TRUE,
-                                                                G_PARAM_READWRITE |
-                                                                G_PARAM_CONSTRUCT |
-                                                                G_PARAM_STATIC_STRINGS);
+                                                                G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceMainChannel:color-depth:
@@ -541,12 +517,8 @@ static void spice_main_channel_class_init(SpiceMainChannelClass *klass)
      *
      **/
     props[PROP_DISPLAY_COLOR_DEPTH] = g_param_spec_uint("color-depth",
-                                                        "Color depth",
-                                                        "Color depth", 0, 32, 0,
-                                                        G_PARAM_DEPRECATED |
-                                                        G_PARAM_READWRITE |
-                                                        G_PARAM_CONSTRUCT |
-                                                        G_PARAM_STATIC_STRINGS);
+                                                        NULL, NULL, 0, 32, 0,
+                                                        G_PARAM_DEPRECATED | G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceMainChannel:disable-display-align:
@@ -556,12 +528,9 @@ static void spice_main_channel_class_init(SpiceMainChannelClass *klass)
      * Since: 0.13
      */
     props[PROP_DISABLE_DISPLAY_ALIGN] = g_param_spec_boolean("disable-display-align",
-                                                             "Disable display align",
-                                                             "Disable display position alignment",
+                                                             NULL, NULL,
                                                              FALSE,
-                                                             G_PARAM_READWRITE |
-                                                             G_PARAM_CONSTRUCT |
-                                                             G_PARAM_STATIC_STRINGS);
+                                                             G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceMainChannel:max-clipboard:
@@ -572,12 +541,9 @@ static void spice_main_channel_class_init(SpiceMainChannelClass *klass)
      * Since: 0.22
      **/
     props[PROP_MAX_CLIPBOARD] = g_param_spec_int("max-clipboard",
-                                                 "max clipboard",
-                                                 "Maximum clipboard data size",
+                                                 NULL, NULL,
                                                  -1, G_MAXINT, 100 * 1024 * 1024,
-                                                 G_PARAM_READWRITE |
-                                                 G_PARAM_CONSTRUCT |
-                                                 G_PARAM_STATIC_STRINGS);
+                                                 G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 

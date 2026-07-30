@@ -452,11 +452,9 @@ static void spice_usb_device_manager_class_init(SpiceUsbDeviceManagerClass *klas
      *
      **/
     props[PROP_SESSION] = g_param_spec_object("session",
-                                              "Session",
-                                              "SpiceSession",
+                                              NULL, NULL,
                                               SPICE_TYPE_SESSION,
-                                              G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                                              G_PARAM_STATIC_STRINGS);
+                                              G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceUsbDeviceManager:auto-connect:
@@ -466,10 +464,9 @@ static void spice_usb_device_manager_class_init(SpiceUsbDeviceManagerClass *klas
      * Note when #SpiceGtkSession's auto-usbredir property is TRUE, this
      * property is controlled by #SpiceGtkSession.
      */
-    props[PROP_AUTO_CONNECT] = g_param_spec_boolean("auto-connect", "Auto Connect",
-                                                    "Auto connect plugged in USB devices",
+    props[PROP_AUTO_CONNECT] = g_param_spec_boolean("auto-connect", NULL, NULL,
                                                     FALSE,
-                                                    G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+                                                    G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceUsbDeviceManager:auto-connect-filter:
@@ -494,10 +491,9 @@ static void spice_usb_device_manager_class_init(SpiceUsbDeviceManagerClass *klas
      * Filter strings in this format can be easily created with the RHEV-M
      * USB filter editor tool.
      */
-    props[PROP_AUTO_CONNECT_FILTER] = g_param_spec_string("auto-connect-filter", "Auto Connect Filter ",
-                                                          "Filter determining which USB devices to auto connect",
+    props[PROP_AUTO_CONNECT_FILTER] = g_param_spec_string("auto-connect-filter", NULL, NULL,
                                                           "0x03,-1,-1,-1,0|-1,-1,-1,-1,1",
-                                                          G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_STRINGS);
+                                                          G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceUsbDeviceManager:redirect-on-connect:
@@ -508,9 +504,8 @@ static void spice_usb_device_manager_class_init(SpiceUsbDeviceManagerClass *klas
      * See #SpiceUsbDeviceManager:auto-connect-filter for the filter string
      * format.
      */
-    props[PROP_REDIRECT_ON_CONNECT] = g_param_spec_string("redirect-on-connect", "Redirect on connect",
-                                                          "Filter selecting USB devices to redirect on connect", NULL,
-                                                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+    props[PROP_REDIRECT_ON_CONNECT] = g_param_spec_string("redirect-on-connect", NULL, NULL, NULL,
+                                                          G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceUsbDeviceManager:free-channels:
@@ -519,12 +514,11 @@ static void spice_usb_device_manager_class_init(SpiceUsbDeviceManagerClass *klas
      *
      * Since: 0.31
      */
-    props[PROP_FREE_CHANNELS] = g_param_spec_int("free-channels", "Free channels",
-                                                 "The number of available channels for redirecting USB devices",
+    props[PROP_FREE_CHANNELS] = g_param_spec_int("free-channels", NULL, NULL,
                                                  0,
                                                  G_MAXINT,
                                                  0,
-                                                 G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
+                                                 G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 

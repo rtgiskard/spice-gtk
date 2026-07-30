@@ -302,17 +302,15 @@ static void spice_qmp_port_class_init(SpiceQmpPortClass *klass)
 
     props[PROP_CHANNEL] =
         g_param_spec_object("channel",
-                            "Channel",
-                            "Associated port channel",
+                            NULL, NULL,
                             SPICE_TYPE_PORT_CHANNEL,
-                            G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_STRINGS);
+                            G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_NAME);
 
     props[PROP_READY] =
         g_param_spec_boolean("ready",
-                             "Ready",
-                             "Whether the QMP port is ready",
+                             NULL, NULL,
                              FALSE,
-                             G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
+                             G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
  }

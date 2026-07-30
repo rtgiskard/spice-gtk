@@ -108,13 +108,9 @@ static void spice_inputs_channel_class_init(SpiceInputsChannelClass *klass)
     channel_class->channel_reset = spice_inputs_channel_reset;
 
     props[PROP_KEY_MODIFIERS] = g_param_spec_int("key-modifiers",
-                                                 "Key modifiers",
-                                                 "Guest keyboard lock/led state",
+                                                 NULL, NULL,
                                                  0, INT_MAX, 0,
-                                                 G_PARAM_READABLE |
-                                                 G_PARAM_STATIC_NAME |
-                                                 G_PARAM_STATIC_NICK |
-                                                 G_PARAM_STATIC_BLURB);
+                                                 G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 

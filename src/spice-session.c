@@ -883,12 +883,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      *
      **/
     props[PROP_HOST] = g_param_spec_string("host",
-                                           "Host",
-                                           "Remote host",
+                                           NULL, NULL,
                                            "localhost",
-                                           G_PARAM_READWRITE |
-                                           G_PARAM_CONSTRUCT |
-                                           G_PARAM_STATIC_STRINGS);
+                                           G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:unix-path:
@@ -898,12 +895,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.28
      **/
     props[PROP_UNIX_PATH] = g_param_spec_string("unix-path",
-                                                "Unix path",
-                                                "Unix path",
+                                                NULL, NULL,
                                                 NULL,
-                                                G_PARAM_READWRITE |
-                                                G_PARAM_CONSTRUCT |
-                                                G_PARAM_STATIC_STRINGS);
+                                                G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:port:
@@ -912,11 +906,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      *
      **/
     props[PROP_PORT] = g_param_spec_string("port",
-                                           "Port",
-                                           "Remote port (plaintext)",
+                                           NULL, NULL,
                                            NULL,
-                                           G_PARAM_READWRITE |
-                                           G_PARAM_STATIC_STRINGS);
+                                           G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:tls-port:
@@ -925,11 +917,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      *
      **/
     props[PROP_TLS_PORT] = g_param_spec_string("tls-port",
-                                               "TLS port",
-                                               "Remote port (encrypted)",
+                                               NULL, NULL,
                                                NULL,
-                                               G_PARAM_READWRITE |
-                                               G_PARAM_STATIC_STRINGS);
+                                               G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:username:
@@ -938,11 +928,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      *
      **/
     props[PROP_USERNAME] = g_param_spec_string("username",
-                                               "Username",
-                                               "Username used for SASL connections",
+                                               NULL, NULL,
                                                NULL,
-                                               G_PARAM_READWRITE |
-                                               G_PARAM_STATIC_STRINGS);
+                                               G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:password:
@@ -951,11 +939,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      *
      **/
     props[PROP_PASSWORD] = g_param_spec_string("password",
-                                               "Password",
-                                               "",
+                                               NULL, NULL,
                                                NULL,
-                                               G_PARAM_READWRITE |
-                                               G_PARAM_STATIC_STRINGS);
+                                               G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:ca-file:
@@ -965,22 +951,18 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      *
      **/
     props[PROP_CA_FILE] = g_param_spec_string("ca-file",
-                                              "CA file",
-                                              "File holding the CA certificates",
+                                              NULL, NULL,
                                               NULL,
-                                              G_PARAM_READWRITE |
-                                              G_PARAM_STATIC_STRINGS);
+                                              G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:ciphers:
      *
      **/
     props[PROP_CIPHERS] = g_param_spec_string("ciphers",
-                                              "Ciphers",
-                                              "SSL cipher list",
+                                              NULL, NULL,
                                               NULL,
-                                              G_PARAM_READWRITE |
-                                              G_PARAM_STATIC_STRINGS);
+                                              G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:protocol:
@@ -989,12 +971,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      *
      **/
     props[PROP_PROTOCOL] = g_param_spec_int("protocol",
-                                            "Protocol",
-                                            "Spice protocol major version",
+                                            NULL, NULL,
                                             1, 2, 2,
-                                            G_PARAM_READWRITE |
-                                            G_PARAM_CONSTRUCT |
-                                            G_PARAM_STATIC_STRINGS);
+                                            G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:uri:
@@ -1004,44 +983,36 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      *
      **/
     props[PROP_URI] = g_param_spec_string("uri",
-                                          "URI",
-                                          "Spice connection URI",
+                                          NULL, NULL,
                                           NULL,
-                                          G_PARAM_READWRITE |
-                                          G_PARAM_STATIC_STRINGS);
+                                          G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:client-sockets:
      *
      **/
     props[PROP_CLIENT_SOCKETS] = g_param_spec_boolean("client-sockets",
-                                                      "Client sockets",
-                                                      "Sockets are provided by the client",
+                                                      NULL, NULL,
                                                       FALSE,
-                                                      G_PARAM_READWRITE |
-                                                      G_PARAM_STATIC_STRINGS);
+                                                      G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:pubkey:
      *
      **/
     props[PROP_PUBKEY] = g_param_spec_boxed("pubkey",
-                                            "Pub Key",
-                                            "Public key to check",
+                                            NULL, NULL,
                                             G_TYPE_BYTE_ARRAY,
-                                            G_PARAM_READWRITE |
-                                            G_PARAM_STATIC_STRINGS);
+                                            G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:cert-subject:
      *
      **/
     props[PROP_CERT_SUBJECT] = g_param_spec_string("cert-subject",
-                                                   "Cert Subject",
-                                                   "Certificate subject to check",
+                                                   NULL, NULL,
                                                    NULL,
-                                                   G_PARAM_READWRITE |
-                                                   G_PARAM_STATIC_STRINGS);
+                                                   G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:verify:
@@ -1050,13 +1021,10 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * certificate should be checked
      **/
     props[PROP_VERIFY] = g_param_spec_flags("verify",
-                                            "Verify",
-                                            "Certificate verification parameters",
+                                            NULL, NULL,
                                             SPICE_TYPE_SESSION_VERIFY,
                                             SPICE_SESSION_VERIFY_HOSTNAME,
-                                            G_PARAM_READWRITE |
-                                            G_PARAM_CONSTRUCT |
-                                            G_PARAM_STATIC_STRINGS);
+                                            G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:migration-state:
@@ -1066,12 +1034,10 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      *
      **/
     props[PROP_MIGRATION_STATE] = g_param_spec_enum("migration-state",
-                                                    "Migration state",
-                                                    "Migration state",
+                                                    NULL, NULL,
                                                     SPICE_TYPE_SESSION_MIGRATION,
                                                     SPICE_SESSION_MIGRATION_NONE,
-                                                    G_PARAM_READABLE |
-                                                    G_PARAM_STATIC_STRINGS);
+                                                    G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:disable-effects:
@@ -1084,11 +1050,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.7
      **/
     props[PROP_DISABLE_EFFECTS] = g_param_spec_boxed ("disable-effects",
-                                                     "Disable effects",
-                                                     "Comma-separated effects to disable",
+                                                     NULL, NULL,
                                                      G_TYPE_STRV,
-                                                     G_PARAM_READWRITE |
-                                                     G_PARAM_STATIC_STRINGS);
+                                                     G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:color-depth:
@@ -1101,12 +1065,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * This option is currently ignored.
      **/
     props[PROP_COLOR_DEPTH] = g_param_spec_int("color-depth",
-                                               "Color depth",
-                                               "Display channel color depth",
+                                               NULL, NULL,
                                                0, 32, 0,
-                                               G_PARAM_DEPRECATED |
-                                               G_PARAM_READWRITE |
-                                               G_PARAM_STATIC_STRINGS);
+                                               G_PARAM_DEPRECATED | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:enable-smartcard:
@@ -1117,11 +1078,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.7
      **/
     props[PROP_SMARTCARD] = g_param_spec_boolean("enable-smartcard",
-                                                 "Enable smartcard event forwarding",
-                                                 "Forward smartcard events to the SPICE server",
+                                                 NULL, NULL,
                                                  FALSE,
-                                                 G_PARAM_READWRITE |
-                                                 G_PARAM_STATIC_STRINGS);
+                                                 G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:enable-audio:
@@ -1132,11 +1091,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.8
      **/
     props[PROP_AUDIO] = g_param_spec_boolean("enable-audio",
-                                             "Enable audio channels",
-                                             "Enable audio channels",
+                                             NULL, NULL,
                                              TRUE,
-                                             G_PARAM_READWRITE | G_PARAM_CONSTRUCT |
-                                             G_PARAM_STATIC_STRINGS);
+                                             G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:smartcard-certificates:
@@ -1150,12 +1107,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.7
      **/
     props[PROP_SMARTCARD_CERTIFICATES] = g_param_spec_boxed("smartcard-certificates",
-                                                            "Smartcard certificates",
-                                                            "Smartcard certificates for software-based smartcards",
+                                                            NULL, NULL,
                                                             G_TYPE_STRV,
-                                                            G_PARAM_READABLE |
-                                                            G_PARAM_WRITABLE |
-                                                            G_PARAM_STATIC_STRINGS);
+                                                            G_PARAM_READABLE | G_PARAM_WRITABLE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:smartcard-db:
@@ -1166,12 +1120,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.7
      **/
     props[PROP_SMARTCARD_DB] = g_param_spec_string("smartcard-db",
-                                                   "Smartcard certificate database",
-                                                   "Path to the database for smartcard certificates",
+                                                   NULL, NULL,
                                                    NULL,
-                                                   G_PARAM_READABLE |
-                                                   G_PARAM_WRITABLE |
-                                                   G_PARAM_STATIC_STRINGS);
+                                                   G_PARAM_READABLE | G_PARAM_WRITABLE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:enable-usbredir:
@@ -1182,11 +1133,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.8
      **/
     props[PROP_USBREDIR] = g_param_spec_boolean("enable-usbredir",
-                                                "Enable USB device redirection",
-                                                "Forward USB devices to the SPICE server",
+                                                NULL, NULL,
                                                 TRUE,
-                                                G_PARAM_READWRITE | G_PARAM_CONSTRUCT |
-                                                G_PARAM_STATIC_STRINGS);
+                                                G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession::inhibit-keyboard-grab:
@@ -1199,10 +1148,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.8
      **/
     props[PROP_INHIBIT_KEYBOARD_GRAB] = g_param_spec_boolean("inhibit-keyboard-grab",
-                                                             "Inhibit Keyboard Grab",
-                                                             "Request that SpiceDisplays don't grab the keyboard",
+                                                             NULL, NULL,
                                                              FALSE,
-                                                             G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+                                                             G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:ca:
@@ -1217,11 +1165,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.15
      **/
     props[PROP_CA] = g_param_spec_boxed("ca",
-                                        "CA",
-                                        "The CA certificates data",
+                                        NULL, NULL,
                                         G_TYPE_BYTE_ARRAY,
-                                        G_PARAM_READWRITE |
-                                        G_PARAM_STATIC_STRINGS);
+                                        G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:secure-channels:
@@ -1231,11 +1177,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.20
      **/
     props[PROP_SECURE_CHANNELS] = g_param_spec_boxed ("secure-channels",
-                                                     "Secure channels",
-                                                     "Array of channel type to secure",
+                                                     NULL, NULL,
                                                      G_TYPE_STRV,
-                                                     G_PARAM_READWRITE |
-                                                     G_PARAM_STATIC_STRINGS);
+                                                     G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
 
     /**
@@ -1315,12 +1259,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      *
      * Since: 0.8
      **/
-    props[PROP_READ_ONLY] = g_param_spec_boolean("read-only", "Read-only",
-                                                 "Whether this connection is read-only mode",
+    props[PROP_READ_ONLY] = g_param_spec_boolean("read-only", NULL, NULL,
                                                  FALSE,
-                                                 G_PARAM_READWRITE |
-                                                 G_PARAM_CONSTRUCT |
-                                                 G_PARAM_STATIC_STRINGS);
+                                                 G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:cache-size:
@@ -1330,11 +1271,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.9
      **/
     props[PROP_CACHE_SIZE] = g_param_spec_int("cache-size",
-                                              "Cache size",
-                                              "Images cache size (bytes)",
+                                              NULL, NULL,
                                               0, G_MAXINT, 0,
-                                              G_PARAM_READWRITE |
-                                              G_PARAM_STATIC_STRINGS);
+                                              G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:glz-window-size:
@@ -1344,11 +1283,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.9
      **/
     props[PROP_GLZ_WINDOW_SIZE] = g_param_spec_int("glz-window-size",
-                                                   "Glz window size",
-                                                   "Glz window size (bytes)",
+                                                   NULL, NULL,
                                                    0, LZ_MAX_WINDOW_SIZE * 4, 0,
-                                                   G_PARAM_READWRITE |
-                                                   G_PARAM_STATIC_STRINGS);
+                                                   G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:name:
@@ -1358,11 +1295,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.11
      **/
     props[PROP_NAME] = g_param_spec_string("name",
-                                           "Name",
-                                           "Spice server name",
+                                           NULL, NULL,
                                            NULL,
-                                           G_PARAM_READABLE |
-                                           G_PARAM_STATIC_STRINGS);
+                                           G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:uuid:
@@ -1372,10 +1307,8 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.11
      **/
     props[PROP_UUID] = g_param_spec_pointer("uuid",
-                                            "UUID",
-                                            "Spice server uuid",
-                                            G_PARAM_READABLE |
-                                            G_PARAM_STATIC_STRINGS);
+                                            NULL, NULL,
+                                            G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:proxy:
@@ -1386,11 +1319,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.17
      **/
     props[PROP_PROXY] = g_param_spec_string("proxy",
-                                            "Proxy",
-                                            "The proxy server",
+                                            NULL, NULL,
                                             NULL,
-                                            G_PARAM_READWRITE |
-                                            G_PARAM_STATIC_STRINGS);
+                                            G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:shared-dir:
@@ -1400,12 +1331,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.24
      **/
     props[PROP_SHARED_DIR] = g_param_spec_string("shared-dir",
-                                                 "Shared directory",
-                                                 "Shared directory",
+                                                 NULL, NULL,
                                                  g_get_user_special_dir(G_USER_DIRECTORY_PUBLIC_SHARE),
-                                                 G_PARAM_READWRITE |
-                                                 G_PARAM_CONSTRUCT |
-                                                 G_PARAM_STATIC_STRINGS);
+                                                 G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:share-dir-ro:
@@ -1415,12 +1343,9 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.28
      **/
     props[PROP_SHARE_DIR_RO] = g_param_spec_boolean("share-dir-ro",
-                                                    "Share directory read-only",
-                                                    "Share directory read-only",
+                                                    NULL, NULL,
                                                     FALSE,
-                                                    G_PARAM_READWRITE |
-                                                    G_PARAM_CONSTRUCT |
-                                                    G_PARAM_STATIC_STRINGS);
+                                                    G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:webdav-server:
@@ -1431,15 +1356,13 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.39
      **/
     props[PROP_WEBDAV_SERVER] = g_param_spec_object("webdav-server",
-                                                    "WebDAV server",
-                                                    "PhodavServer object used for directory sharing",
+                                                    NULL, NULL,
                                                     #ifdef USE_PHODAV
                                                     PHODAV_TYPE_SERVER,
                                                     #else
                                                     G_TYPE_OBJECT,
                                                     #endif
-                                                    G_PARAM_READABLE |
-                                                    G_PARAM_STATIC_STRINGS);
+                                                    G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:preferred-compression:
@@ -1450,12 +1373,10 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.29
      **/
     props[PROP_PREF_COMPRESSION] = g_param_spec_enum("preferred-compression",
-                                                     "Preferred image compression algorithm",
-                                                     "Preferred image compression algorithm",
+                                                     NULL, NULL,
                                                      SPICE_TYPE_IMAGE_COMPRESSION,
                                                      SPICE_IMAGE_COMPRESSION_INVALID,
-                                                     G_PARAM_READWRITE |
-                                                     G_PARAM_STATIC_STRINGS);
+                                                     G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceSession:gl-scanout:
@@ -1467,16 +1388,14 @@ static void spice_session_class_init(SpiceSessionClass *klass)
      * Since: 0.36
      **/
     props[PROP_GL_SCANOUT] = g_param_spec_boolean("gl-scanout",
-                                                  "Enable GL scanout support",
-                                                  "Enable GL scanout support",
+                                                  NULL, NULL,
                                                   #ifdef HAVE_EGL
                                                   g_getenv("SPICE_DISABLE_GL_SCANOUT") == NULL,
                                                   G_PARAM_CONSTRUCT |
                                                   #else
                                                   false,
                                                   #endif
-                                                  G_PARAM_READWRITE |
-                                                  G_PARAM_STATIC_STRINGS);
+                                                  G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 }

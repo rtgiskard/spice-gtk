@@ -339,11 +339,9 @@ static void spice_usb_device_widget_class_init(SpiceUsbDeviceWidgetClass *klass)
      *
      **/
     props[PROP_SESSION] = g_param_spec_object("session",
-                                              "Session",
-                                              "SpiceSession",
+                                              NULL, NULL,
                                               SPICE_TYPE_SESSION,
-                                              G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                                              G_PARAM_STATIC_STRINGS);
+                                              G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceUsbDeviceWidget:device-format-string:
@@ -352,11 +350,9 @@ static void spice_usb_device_widget_class_init(SpiceUsbDeviceWidgetClass *klass)
      * the device USB descriptions.
      */
     props[PROP_DEVICE_FORMAT_STRING] = g_param_spec_string("device-format-string",
-                                                           "Device format string",
-                                                           "Format string for device description",
+                                                           NULL, NULL,
                                                            NULL,
-                                                           G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                                                           G_PARAM_STATIC_STRINGS);
+                                                           G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 
