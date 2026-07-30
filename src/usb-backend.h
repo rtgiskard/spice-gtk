@@ -65,6 +65,7 @@ void spice_usb_backend_deregister_hotplug(SpiceUsbBackend *be);
 /* Spice USB backend device API */
 SpiceUsbDevice *spice_usb_backend_device_ref(SpiceUsbDevice *dev);
 void spice_usb_backend_device_unref(SpiceUsbDevice *dev);
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(SpiceUsbDevice, spice_usb_backend_device_unref)
 gconstpointer spice_usb_backend_device_get_libdev(const SpiceUsbDevice *dev);
 const UsbDeviceInformation* spice_usb_backend_device_get_info(const SpiceUsbDevice *dev);
 gboolean spice_usb_backend_device_isoch(SpiceUsbDevice *dev);
