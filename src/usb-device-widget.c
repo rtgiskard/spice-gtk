@@ -138,9 +138,8 @@ static void spice_usb_device_widget_add_err_msg(SpiceUsbDeviceWidget *self,
         /* Append the new error message to err_msg,
            but only if it's *not* already there! */
         if (!strstr(priv->err_msg, new_err_msg)) {
-            gchar *old_err_msg = priv->err_msg;
+            g_autofree gchar *old_err_msg = priv->err_msg;
             priv->err_msg = g_strdup_printf("%s\n%s", old_err_msg, new_err_msg);
-            g_free(old_err_msg);
         }
         g_free(new_err_msg);
     } else {
@@ -192,7 +191,7 @@ empty_cd_clicked_cb(GtkToggleButton *toggle, gpointer user_data)
 {
     SpiceUsbDeviceWidget *self = SPICE_USB_DEVICE_WIDGET(user_data);
     SpiceUsbDeviceWidgetPrivate *priv = self->priv;
-    GtkWidget *dialog;
+    g_autoptr(GtkWidget) dialog = NULL;
     gint dialog_rc;
 
     if (!gtk_toggle_button_get_active(toggle)) {
@@ -227,7 +226,7 @@ empty_cd_clicked_cb(GtkToggleButton *toggle, gpointer user_data)
             g_clear_error(&err);
         }
     }
-    gtk_widget_destroy(dialog);
+    gtk_widget_destroy(g_steal_pointer(&dialog));
 }
 
 static void spice_usb_device_widget_add_empty_cd(SpiceUsbDeviceWidget *self)
@@ -251,9 +250,9 @@ static void spice_usb_device_widget_constructed(GObject *gobject)
 {
     SpiceUsbDeviceWidget *self;
     SpiceUsbDeviceWidgetPrivate *priv;
-    GPtrArray *devices = NULL;
+    g_autoptr(GPtrArray) devices = NULL;
     GError *err = NULL;
-    gchar *str;
+    g_autofree gchar *str = NULL;
 
     G_OBJECT_CLASS(spice_usb_device_widget_parent_class)->constructed(gobject);
 
@@ -266,7 +265,6 @@ static void spice_usb_device_widget_constructed(GObject *gobject)
     priv->label = gtk_label_new(NULL);
     str = g_strdup_printf("<b>%s</b>", _("Select USB devices to redirect"));
     gtk_label_set_markup(GTK_LABEL (priv->label), str);
-    g_free(str);
     gtk_label_set_xalign(GTK_LABEL(priv->label), 0.0);
     gtk_label_set_yalign(GTK_LABEL(priv->label), 0.5);
     gtk_box_pack_start(GTK_BOX(self), priv->label, FALSE, FALSE, 0);
@@ -295,8 +293,6 @@ static void spice_usb_device_widget_constructed(GObject *gobject)
         for (i = 0; i < devices->len; i++) {
             device_added_cb(NULL, g_ptr_array_index(devices, i), self);
         }
-
-        g_ptr_array_unref(devices);
     }
 
     spice_usb_device_widget_update_status(self);
@@ -450,7 +446,7 @@ static gboolean spice_usb_device_widget_update_status(gpointer user_data)
 {
     SpiceUsbDeviceWidget *self = SPICE_USB_DEVICE_WIDGET(user_data);
     SpiceUsbDeviceWidgetPrivate *priv = self->priv;
-    gchar *str, *markup_str;
+    g_autofree gchar *str = NULL, *markup_str = NULL;
     const gchar *free_channels_str;
     int free_channels;
     gboolean redirecting;
@@ -465,8 +461,6 @@ static gboolean spice_usb_device_widget_update_status(gpointer user_data)
     str = g_strdup_printf(free_channels_str, free_channels);
     markup_str = g_strdup_printf("<b>%s</b>", str);
     gtk_label_set_markup(GTK_LABEL (priv->label), markup_str);
-    g_free(markup_str);
-    g_free(str);
 
     priv->device_count = 0;
     gtk_container_foreach(GTK_CONTAINER(self), check_can_redirect, self);
@@ -505,43 +499,39 @@ static void connect_cb_data_free(connect_cb_data *data)
     g_free(data);
 }
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(connect_cb_data, connect_cb_data_free)
+
 static void _disconnect_cb(GObject *gobject, GAsyncResult *res, gpointer user_data)
 {
     SpiceUsbDeviceManager *manager = SPICE_USB_DEVICE_MANAGER(gobject);
-    connect_cb_data *data = user_data;
-    GError *err = NULL;
+    g_autoptr(connect_cb_data) data = user_data;
+    g_autoptr(GError) err = NULL;
 
     spice_usb_device_manager_disconnect_device_finish(manager, res, &err);
     if (err) {
         SPICE_DEBUG("Device disconnection failed");
-        g_error_free(err);
     }
-
-    connect_cb_data_free(data);
 }
 
 static void checkbox_clicked_cb(GtkWidget *check, gpointer user_data);
 static void connect_cb(GObject *gobject, GAsyncResult *res, gpointer user_data)
 {
     SpiceUsbDeviceManager *manager = SPICE_USB_DEVICE_MANAGER(gobject);
-    connect_cb_data *data = user_data;
+    g_autoptr(connect_cb_data) data = user_data;
     SpiceUsbDeviceWidget *self = data->self;
     SpiceUsbDeviceWidgetPrivate *priv = self->priv;
     SpiceUsbDevice *device;
-    GError *err = NULL;
-    gchar *desc;
+    g_autoptr(GError) err = NULL;
 
     spice_usb_device_manager_connect_device_finish(manager, res, &err);
     if (err) {
         device = g_object_get_data(G_OBJECT(data->check), "usb-device");
-        desc = spice_usb_device_get_description(device,
-                                                priv->device_format_string);
+        g_autofree gchar *desc = spice_usb_device_get_description(device,
+                                                                   priv->device_format_string);
         g_prefix_error(&err, "Could not redirect %s: ", desc);
-        g_free(desc);
 
         SPICE_DEBUG("%s", err->message);
         g_signal_emit(self, signals[CONNECT_FAILED], 0, device, err);
-        g_error_free(err);
 
         /* don't trigger a disconnect if connect failed */
         g_signal_handlers_block_by_func(GTK_TOGGLE_BUTTON(data->check),
@@ -550,8 +540,6 @@ static void connect_cb(GObject *gobject, GAsyncResult *res, gpointer user_data)
         g_signal_handlers_unblock_by_func(GTK_TOGGLE_BUTTON(data->check),
                                         checkbox_clicked_cb, self);
     }
-
-    connect_cb_data_free(data);
 }
 
 static void checkbox_clicked_cb(GtkWidget *check, gpointer user_data)
@@ -594,12 +582,11 @@ static void device_added_cb(SpiceUsbDeviceManager *manager,
     SpiceUsbDeviceWidget *self = SPICE_USB_DEVICE_WIDGET(user_data);
     SpiceUsbDeviceWidgetPrivate *priv = self->priv;
     GtkWidget *check;
-    gchar *desc;
+    g_autofree gchar *desc = NULL;
 
     desc = spice_usb_device_get_description(device,
                                             priv->device_format_string);
     check = gtk_check_button_new_with_label(desc);
-    g_free(desc);
 
     if (spice_usb_device_manager_is_device_connected(priv->manager,
                                                      device))
