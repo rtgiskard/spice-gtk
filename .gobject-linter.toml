@@ -1,0 +1,19 @@
+min_glib_version = "2.78"
+ignore = [
+        "subprojects/**",
+]
+
+[rules.untranslated_string]
+ignore = ["tools/**"]
+
+[rules.include_order]
+level = "ignore"
+
+[rules.type_style]
+level = "ignore"
+
+[rules.use_auto_cleanup]
+allocation_proof = true
+
+[style]
+space_before_paren = false
