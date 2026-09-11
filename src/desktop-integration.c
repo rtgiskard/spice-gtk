@@ -37,6 +37,8 @@ struct _SpiceDesktopIntegrationPrivate {
 #ifdef WITH_GNOME
     GDBusProxy *gnome_session_proxy;
     guint gnome_automount_inhibit_cookie;
+    GSettings *a11y;
+    gboolean screen_reader_was_active;
 #else
     /* private structures cannot be empty in GLib */
     int dummy;
@@ -63,6 +65,14 @@ static gboolean gnome_integration_init(SpiceDesktopIntegration *self)
     GError *error = NULL;
     gboolean success = TRUE;
     gchar *name_owner = NULL;
+
+    priv->a11y = g_settings_new("org.gnome.desktop.a11y.applications");
+    if (priv->a11y) {
+        gboolean active = g_settings_get_boolean(priv->a11y, "screen-reader-enabled");
+        spice_debug("Client's screen-reader is %s", active ? "active" : "not active");
+    } else {
+        spice_debug("Failed to load GNOME's accessibility settings");
+    }
 
     priv->gnome_session_proxy =
         g_dbus_proxy_new_for_bus_sync(G_BUS_TYPE_SESSION,
@@ -143,11 +153,33 @@ static void gnome_integration_uninhibit_automount(SpiceDesktopIntegration *self)
     priv->gnome_automount_inhibit_cookie = 0;
 }
 
+static void gnome_integration_toggle_client_screen_reader(SpiceDesktopIntegration *self,
+                                                          gboolean keyboard_grab)
+{
+    SpiceDesktopIntegrationPrivate *priv = self->priv;
+
+    if (priv->a11y == NULL) {
+        return;
+    }
+
+    gboolean enabled = g_settings_get_boolean(priv->a11y, "screen-reader-enabled");
+    if (enabled && keyboard_grab) {
+        spice_debug("Disabling client's screen-reader");
+        g_warn_if_fail(g_settings_set_boolean(priv->a11y, "screen-reader-enabled", FALSE));
+        priv->screen_reader_was_active = TRUE;
+    } else if (!enabled && !keyboard_grab && priv->screen_reader_was_active) {
+        spice_debug("Enabling client's screen-reader");
+        g_warn_if_fail(g_settings_set_boolean(priv->a11y, "screen-reader-enabled", TRUE));
+        priv->screen_reader_was_active = FALSE;
+    }
+}
+
 static void gnome_integration_dispose(SpiceDesktopIntegration *self)
 {
     SpiceDesktopIntegrationPrivate *priv = self->priv;
 
     g_clear_object(&priv->gnome_session_proxy);
+    g_clear_object(&priv->a11y);
 }
 #endif /* WITH_GNOME */
 
@@ -216,5 +248,13 @@ void spice_desktop_integration_uninhibit_automount(SpiceDesktopIntegration *self
 {
 #ifdef WITH_GNOME
     gnome_integration_uninhibit_automount(self);
+#endif
+}
+
+void spice_desktop_integration_toggle_client_screen_reader(SpiceDesktopIntegration *self,
+                                                           gboolean keyboard_grab)
+{
+#ifdef WITH_GNOME
+    gnome_integration_toggle_client_screen_reader(self, keyboard_grab);
 #endif
 }
