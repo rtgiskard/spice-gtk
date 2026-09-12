@@ -16,8 +16,8 @@ endif
 
 if spice_gtk_has_polkit
   tests_sources += [
-    'usb-acl-helper.c',
-    'mock-acl-helper.c',
+    'usb-redirect-helper.c',
+    'mock-redirect-helper.c',
   ]
 endif
 

@@ -23,8 +23,14 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <gio/gio.h>
 
-#include "usb-acl-helper.h"
+#include "usb-redirect-helper.h"
+
+#define USB_AUTH_DBUS_NAME      "org.freedesktop.usbredir1"
+#define USB_AUTH_DBUS_PATH      "/org/freedesktop/usbredir1"
+#define USB_AUTH_DBUS_IFACE     "org.freedesktop.usbredir1"
+#define USB_AUTH_DBUS_METHOD    "OpenBusDev"
 
 struct _SpiceUsbAclHelperPrivate {
     GTask *task;
@@ -32,6 +38,8 @@ struct _SpiceUsbAclHelperPrivate {
     GIOChannel *out_ch;
     GCancellable *cancellable;
     gulong cancellable_id;
+    gint busnum;
+    gint devnum;
 };
 
 G_DEFINE_TYPE_WITH_PRIVATE(SpiceUsbAclHelper, spice_usb_acl_helper, G_TYPE_OBJECT)
@@ -67,11 +75,12 @@ static void spice_usb_acl_helper_class_init(SpiceUsbAclHelperClass *klass)
 {
     GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
 
-    gobject_class->finalize     = spice_usb_acl_helper_finalize;
+    gobject_class->finalize = spice_usb_acl_helper_finalize;
 }
 
-/* ------------------------------------------------------------------ */
-/* callbacks                                                          */
+/* -------------------------------------------------- */
+/* ACL mechanism if usbredir-helper not available     */
+/* -------------------------------------------------- */
 
 static void async_result_set_cancelled(GTask *task)
 {
@@ -92,7 +101,6 @@ static gboolean cb_out_watch(GIOChannel    *channel,
     gchar *string;
     gsize size;
 
-    /* Check that we've not been cancelled */
     if (priv->task == NULL)
         goto done;
 
@@ -104,7 +112,8 @@ static gboolean cb_out_watch(GIOChannel    *channel,
             string[strlen(string) - 1] = 0;
             if (g_strcmp0(string, "SUCCESS") == 0) {
                 success = TRUE;
-                g_task_return_boolean(priv->task, TRUE);
+                /* -1 : no fd returned */
+                g_task_return_int(priv->task, -1);
             } else if (g_strcmp0(string, "CANCELED") == 0) {
                 async_result_set_cancelled(priv->task);
             } else {
@@ -124,7 +133,7 @@ static gboolean cb_out_watch(GIOChannel    *channel,
                         "Unexpected EOF reading from acl helper stdout");
             break;
         case G_IO_STATUS_AGAIN:
-            return TRUE; /* Wait for more input */
+            return TRUE;
     }
 
     g_cancellable_disconnect(priv->cancellable, priv->cancellable_id);
@@ -143,9 +152,7 @@ done:
 
 static void cancelled_cb(GCancellable *cancellable, gpointer user_data)
 {
-    SpiceUsbAclHelper *self = SPICE_USB_ACL_HELPER(user_data);
-
-    spice_usb_acl_helper_cancel(self);
+    spice_usb_acl_helper_cancel(SPICE_USB_ACL_HELPER(user_data));
 }
 
 static void helper_child_watch_cb(GPid pid, gint status, gpointer user_data)
@@ -153,30 +160,12 @@ static void helper_child_watch_cb(GPid pid, gint status, gpointer user_data)
     /* Nothing to do, but we need the child watch to avoid zombies */
 }
 
-/* ------------------------------------------------------------------ */
-/* private api                                                        */
-
-G_GNUC_INTERNAL
-SpiceUsbAclHelper *spice_usb_acl_helper_new(void)
+static void legacy_open_acl_async(SpiceUsbAclHelper *self,
+                                  gint busnum, gint devnum,
+                                  GCancellable *cancellable,
+                                  GTask *task)
 {
-    GObject *obj;
-
-    obj = g_object_new(SPICE_TYPE_USB_ACL_HELPER, NULL);
-
-    return SPICE_USB_ACL_HELPER(obj);
-}
-
-G_GNUC_INTERNAL
-void spice_usb_acl_helper_open_acl_async(SpiceUsbAclHelper *self,
-                                         gint busnum, gint devnum,
-                                         GCancellable *cancellable,
-                                         GAsyncReadyCallback callback,
-                                         gpointer user_data)
-{
-    g_return_if_fail(SPICE_IS_USB_ACL_HELPER(self));
-
     SpiceUsbAclHelperPrivate *priv = self->priv;
-    GTask *task;
     GError *err = NULL;
     GIOStatus status;
     GPid helper_pid;
@@ -187,15 +176,6 @@ void spice_usb_acl_helper_open_acl_async(SpiceUsbAclHelper *self,
     gchar *argv[] = { (char*)acl_helper, NULL };
     gint in, out;
     gchar buf[128];
-
-    task = g_task_new(self, cancellable, callback, user_data);
-
-    if (priv->out_ch) {
-        g_task_return_new_error(task,
-                            SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
-                            "Error acl-helper already has an acl open");
-        goto done;
-    }
 
     if (g_cancellable_set_error_if_cancelled(cancellable, &err)) {
         g_task_return_error(task, err);
@@ -250,16 +230,114 @@ done:
     g_object_unref(task);
 }
 
+/* ------------------------------------------------------------------  */
+/* Get usb device file descriptor with D-BUS on usbredir-helper daemon */
+/* ------------------------------------------------------------------  */
+
+
+static gboolean error_means_daemon_unavailable(GError *err)
+{
+    if (err == NULL)
+        return FALSE;
+
+    if (g_error_matches(err, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN) ||
+        g_error_matches(err, G_DBUS_ERROR, G_DBUS_ERROR_NAME_HAS_NO_OWNER) ||
+        g_error_matches(err, G_DBUS_ERROR, G_DBUS_ERROR_TIMEOUT) ||
+        g_error_matches(err, G_IO_ERROR, G_IO_ERROR_NOT_FOUND))
+        return TRUE;
+
+    return FALSE;
+}
+
+static void on_dbus_call_ready(GObject *source, GAsyncResult *res, gpointer user_data)
+{
+    SpiceUsbAclHelper *self = SPICE_USB_ACL_HELPER(user_data);
+    SpiceUsbAclHelperPrivate *priv = self->priv;
+    GUnixFDList *fd_list = NULL;
+    GVariant *ret;
+    GError *err = NULL;
+
+    ret = g_dbus_connection_call_with_unix_fd_list_finish(
+              G_DBUS_CONNECTION(source), &fd_list, res, &err);
+
+    if (!ret) {
+        if (error_means_daemon_unavailable(err)) {
+            /* usbredir-helper daemon unavailable
+             * Use of ACL mechanism */
+            g_clear_error(&err);
+            return legacy_open_acl_async(self, priv->busnum, priv->devnum,
+                                  priv->cancellable, priv->task);
+        }
+        g_task_return_error(priv->task, err);
+        goto done;
+    }
+
+    gint handle_index;
+    g_variant_get(ret, "(h)", &handle_index);
+    gint fd = g_unix_fd_list_get(fd_list, handle_index, &err);
+    g_variant_unref(ret);
+    g_clear_object(&fd_list);
+
+    if (fd < 0)
+        g_task_return_error(priv->task, err);
+    else
+        g_task_return_int(priv->task, fd);
+
+done:
+    g_clear_object(&priv->task);
+}
+
+/* ------------------------------------------------------------------ */
+/* public api                                                         */
+/* ------------------------------------------------------------------ */
+
 G_GNUC_INTERNAL
-gboolean spice_usb_acl_helper_open_acl_finish(
+SpiceUsbAclHelper *spice_usb_acl_helper_new(void)
+{
+    return SPICE_USB_ACL_HELPER(g_object_new(SPICE_TYPE_USB_ACL_HELPER, NULL));
+}
+
+G_GNUC_INTERNAL
+void spice_usb_acl_helper_open_acl_async(SpiceUsbAclHelper *self,
+                                         gint busnum, gint devnum,
+                                         GCancellable *cancellable,
+                                         GAsyncReadyCallback callback,
+                                         gpointer user_data)
+{
+    SpiceUsbAclHelperPrivate *priv = self->priv;
+    GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, NULL);
+
+    priv->task = g_task_new(self, cancellable, callback, user_data);
+    priv->busnum = busnum;
+    priv->devnum = devnum;
+
+
+    if (!bus) {
+        /* No D-BUS connection => fallback to ACL*/
+        GTask *task = priv->task;
+        priv->task = NULL;
+        legacy_open_acl_async(self, busnum, devnum, cancellable, task);
+        return;
+    }
+
+    g_dbus_connection_call_with_unix_fd_list(
+        bus,
+        USB_AUTH_DBUS_NAME,
+        USB_AUTH_DBUS_PATH,
+        USB_AUTH_DBUS_IFACE,
+        USB_AUTH_DBUS_METHOD,
+        g_variant_new("(yy)", busnum, devnum),
+        G_VARIANT_TYPE("(h)"),
+        G_DBUS_CALL_FLAGS_NONE, -1,
+        NULL,
+        cancellable,
+        on_dbus_call_ready, self);
+}
+
+gint spice_usb_acl_helper_open_acl_finish(
     SpiceUsbAclHelper *self, GAsyncResult *res, GError **err)
 {
-    GTask *task = G_TASK(res);
-
-    g_return_val_if_fail(g_task_is_valid(task, self),
-                         FALSE);
-
-    return g_task_propagate_boolean(task, err);
+    return g_task_propagate_int(G_TASK(res), err);  
 }
 
 G_GNUC_INTERNAL
