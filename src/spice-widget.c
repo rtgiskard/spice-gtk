@@ -204,6 +204,22 @@ static void scaling_updated(SpiceDisplay *display)
     update_size_request(display);
 }
 
+static void scale_factor_changed(SpiceDisplay *display,
+                                 GParamSpec *pspec G_GNUC_UNUSED,
+                                 gpointer user_data G_GNUC_UNUSED)
+{
+    SpiceDisplayPrivate *d = display->priv;
+    gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(display));
+
+    /* The cairo surface persists while a Wayland window moves between
+     * outputs. Re-apply its device scale when GTK changes the widget scale
+     * factor so display scaling stays correct on mixed-DPI setups. */
+    if (d->canvas.surface != NULL)
+        cairo_surface_set_device_scale(d->canvas.surface, scale_factor, scale_factor);
+
+    scaling_updated(display);
+}
+
 static void update_size_request(SpiceDisplay *display)
 {
     SpiceDisplayPrivate *d = display->priv;
@@ -718,6 +734,8 @@ static void spice_display_init(SpiceDisplay *display)
     g_signal_connect(display, "drag-data-received",
                      G_CALLBACK(drag_data_received_callback), NULL);
     g_signal_connect(display, "size-allocate", G_CALLBACK(size_allocate), NULL);
+    g_signal_connect(display, "notify::scale-factor",
+                     G_CALLBACK(scale_factor_changed), NULL);
 
     gtk_widget_add_events(widget,
                           GDK_POINTER_MOTION_MASK |
