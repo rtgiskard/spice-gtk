@@ -214,8 +214,15 @@ static void scale_factor_changed(SpiceDisplay *display,
     /* The cairo surface persists while a Wayland window moves between
      * outputs. Re-apply its device scale when GTK changes the widget scale
      * factor so display scaling stays correct on mixed-DPI setups. */
-    if (d->canvas.surface != NULL)
+    if (d->canvas.surface != NULL) {
         cairo_surface_set_device_scale(d->canvas.surface, scale_factor, scale_factor);
+    }
+
+#ifdef HAVE_EGL
+    if (egl_enabled(d)) {
+        spice_egl_resize_display(display, d->ww * scale_factor, d->wh * scale_factor);
+    }
+#endif
 
     scaling_updated(display);
 }
