@@ -3081,6 +3081,11 @@ static void cursor_set(SpiceCursorChannel *channel,
     update_mouse_cursor(display);
 }
 
+static gint round_up(gint number, gint divisor)
+{
+    return (number + divisor - 1) / divisor * divisor;
+}
+
 static void update_mouse_cursor(SpiceDisplay *display)
 {
     SpiceDisplayPrivate *d = display->priv;
@@ -3114,8 +3119,8 @@ static void update_mouse_cursor(SpiceDisplay *display)
     /* scale mouse cursor surface */
     surface = gdk_cairo_surface_create_from_pixbuf(d->mouse_pixbuf, 0, gtk_widget_get_window(GTK_WIDGET(display)));
     target = cairo_image_surface_create(cairo_image_surface_get_format(surface),
-                                        scale * gdk_pixbuf_get_width(d->mouse_pixbuf),
-                                        scale * gdk_pixbuf_get_height(d->mouse_pixbuf));
+                                        round_up(scale * gdk_pixbuf_get_width(d->mouse_pixbuf), scale_factor),
+                                        round_up(scale * gdk_pixbuf_get_height(d->mouse_pixbuf), scale_factor));
 
     cairo_surface_set_device_scale(target, scale_factor, scale_factor);
     cursor_ctx = cairo_create(target);
