@@ -36,6 +36,13 @@
 #include <gdk/gdkwin32.h>
 #endif
 
+/* Upper bound for waiting on the scanout blit, 1 second in nanoseconds */
+#define SPICE_EGL_FENCE_TIMEOUT_NS (G_GUINT64_CONSTANT(1000000000))
+
+/* How long before the vblank the swap is issued, capped at an eighth of the
+ * refresh period so it stays sane on fast displays */
+#define SPICE_EGL_PRESENT_GUARD_US (G_GINT64_CONSTANT(4000))
+
 #define VERTS_ARRAY_SIZE (sizeof(GLfloat) * 4 * 4)
 #define TEX_ARRAY_SIZE (sizeof(GLfloat) * 4 * 2)
 
@@ -435,6 +442,13 @@ void spice_egl_unrealize_display(SpiceDisplay *display)
 
     DISPLAY_DEBUG(display, "egl unrealize %p", d->egl.surface);
 
+    d->egl.present_pending = FALSE;
+    d->egl.last_present = 0;
+    if (d->egl.present_timer_id != 0) {
+        g_source_remove(d->egl.present_timer_id);
+        d->egl.present_timer_id = 0;
+    }
+
     if (!gl_make_current(display, NULL))
         return;
 
@@ -599,7 +613,7 @@ static void spice_egl_set_filter_for_scale(double s)
 }
 
 G_GNUC_INTERNAL
-void spice_egl_update_display(SpiceDisplay *display)
+gboolean spice_egl_draw_display(SpiceDisplay *display)
 {
     SpiceDisplayPrivate *d = display->priv;
     double s;
@@ -607,9 +621,9 @@ void spice_egl_update_display(SpiceDisplay *display)
     gdouble tx, ty, tw, th;
     int prog;
 
-    g_return_if_fail(d->ready);
+    g_return_val_if_fail(d->ready, FALSE);
     if (!gl_make_current(display, NULL))
-        return;
+        return FALSE;
 
     spice_egl_prepare_default_framebuffer();
 
@@ -678,6 +692,44 @@ void spice_egl_update_display(SpiceDisplay *display)
                              0, 0, 1, 1);
     }
 
+    glUseProgram(prog);
+
+    return TRUE;
+}
+
+/* Block until the GPU is done sampling the guest scanout texture, so that the
+ * buffer can be handed back to the guest for reuse. Unlike waiting for
+ * eglSwapBuffers(), this does not wait for a vblank. */
+G_GNUC_INTERNAL
+void spice_egl_wait_draw_complete(SpiceDisplay *display)
+{
+    GLsync fence;
+
+    if (!gl_make_current(display, NULL))
+        return;
+
+    if (epoxy_gl_version() < 32 && !epoxy_has_gl_extension("GL_ARB_sync")) {
+        glFinish();
+        return;
+    }
+
+    fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    if (fence == NULL) {
+        glFinish();
+        return;
+    }
+
+    glClientWaitSync(fence, GL_SYNC_FLUSH_COMMANDS_BIT,
+                     SPICE_EGL_FENCE_TIMEOUT_NS);
+    glDeleteSync(fence);
+}
+
+static void spice_egl_present_now(SpiceDisplay *display)
+{
+    SpiceDisplayPrivate *d = display->priv;
+
+    d->egl.present_pending = FALSE;
+
 #ifdef GDK_WINDOWING_X11
     if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
         /* gtk+ does the swap with gtkglarea */
@@ -685,7 +737,107 @@ void spice_egl_update_display(SpiceDisplay *display)
     }
 #endif
 
-    glUseProgram(prog);
+    /* The swap returns once the frame has been presented, so this is the
+     * most recent vblank as far as this surface is concerned */
+    d->egl.last_present = g_get_monotonic_time();
+}
+
+/* Refresh period of the monitor showing the widget. The widget's frame clock
+ * cannot be used for this: a compositor that does not implement the frame
+ * synchronisation protocol leaves it free running with no timing information
+ * at all, which on a 30Hz display means it reports nothing usable. */
+static gint64 spice_egl_refresh_period(SpiceDisplay *display)
+{
+    GdkWindow *window;
+    GdkMonitor *monitor;
+    int rate;
+
+    window = gtk_widget_get_window(GTK_WIDGET(display));
+    if (window == NULL)
+        return 0;
+
+    monitor = gdk_display_get_monitor_at_window(gdk_window_get_display(window),
+                                                window);
+    rate = monitor != NULL ? gdk_monitor_get_refresh_rate(monitor) : 0;
+    if (rate <= 0)
+        return 0;
+
+    /* milli-Hz to microseconds */
+    return G_USEC_PER_SEC * G_GINT64_CONSTANT(1000) / rate;
+}
+
+static gboolean spice_egl_present_timer(gpointer data)
+{
+    SpiceDisplay *display = SPICE_DISPLAY(data);
+
+    display->priv->egl.present_timer_id = 0;
+    if (display->priv->egl.present_pending)
+        spice_egl_present_now(display);
+
+    return G_SOURCE_REMOVE;
+}
+
+/*
+ * Present a drawn frame.
+ *
+ * eglSwapBuffers() waits for the vblank, and the wait happens on the main
+ * loop, where it also stops the display channel from being serviced. With
+ * spice GL scanout the guest is blocked until the client acknowledges each
+ * frame, so a swap issued as soon as the frame is drawn costs the guest a
+ * full refresh period on every frame and throttles it to a fraction of the
+ * display refresh rate.
+ *
+ * Turning vsync off would fix the frame rate but tears, because the
+ * compositor samples the same window while it is being drawn into. Instead
+ * the swap is deferred until shortly before the next vblank is due, using
+ * the previous swap as the phase reference: the wait inside the swap shrinks
+ * to the guard interval, presentation stays synchronised, and the guest is
+ * free to render its next frame in the meantime.
+ *
+ * If the refresh period is not known the frame is presented immediately,
+ * which is the behaviour this replaces.
+ */
+G_GNUC_INTERNAL
+void spice_egl_queue_present(SpiceDisplay *display)
+{
+    SpiceDisplayPrivate *d = display->priv;
+    gint64 period, guard, due, now;
+
+    d->egl.present_pending = TRUE;
+
+    if (d->egl.present_timer_id != 0)
+        return;
+
+    period = spice_egl_refresh_period(display);
+    if (period <= 0) {
+        spice_egl_present_now(display);
+        return;
+    }
+
+    guard = MIN(period / 8, SPICE_EGL_PRESENT_GUARD_US);
+    now = g_get_monotonic_time();
+    due = d->egl.last_present + period - guard;
+
+    if (d->egl.last_present == 0 || due <= now) {
+        spice_egl_present_now(display);
+        return;
+    }
+
+    d->egl.present_timer_id = g_timeout_add((due - now) / 1000,
+                                            spice_egl_present_timer, display);
+}
+
+G_GNUC_INTERNAL
+void spice_egl_update_display(SpiceDisplay *display)
+{
+    SpiceDisplayPrivate *d = display->priv;
+
+    /* A frame that is drawn and waiting to be presented does not need to be
+     * drawn again, which matters on large displays */
+    if (!d->egl.present_pending && !spice_egl_draw_display(display))
+        return;
+
+    spice_egl_queue_present(display);
 }
 
 G_GNUC_INTERNAL

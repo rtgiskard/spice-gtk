@@ -3404,8 +3404,15 @@ static void gl_draw(SpiceDisplay *display,
     if (gtk_stack_get_visible_child(d->stack) == gl) {
         gtk_gl_area_queue_render(GTK_GL_AREA(gl));
         d->egl.call_draw_done = TRUE;
+    } else if (spice_egl_draw_display(display)) {
+        /* Release the guest as soon as the GPU is done reading the scanout,
+         * before presenting: the presentation waits for a vblank, and making
+         * the guest wait for that as well throttles it to a fraction of the
+         * display refresh rate. */
+        spice_egl_wait_draw_complete(display);
+        spice_display_channel_gl_draw_done(d->display);
+        spice_egl_queue_present(display);
     } else {
-        spice_egl_update_display(display);
         spice_display_channel_gl_draw_done(d->display);
     }
 }

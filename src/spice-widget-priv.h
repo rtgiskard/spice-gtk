@@ -137,6 +137,9 @@ struct _SpiceDisplayPrivate {
     struct {
         gboolean            context_ready;
         gboolean            enabled;
+        gboolean            present_pending;
+        gint64              last_present;
+        guint               present_timer_id;
         EGLSurface          surface;
         EGLDisplay          display;
         EGLConfig           conf;
@@ -166,6 +169,9 @@ gboolean spice_egl_realize_display           (SpiceDisplay *display, GdkWindow *
                                               GError **err);
 void     spice_egl_unrealize_display         (SpiceDisplay *display);
 void     spice_egl_update_display            (SpiceDisplay *display);
+gboolean spice_egl_draw_display              (SpiceDisplay *display);
+void     spice_egl_wait_draw_complete        (SpiceDisplay *display);
+void     spice_egl_queue_present             (SpiceDisplay *display);
 void     spice_egl_resize_display            (SpiceDisplay *display, int w, int h);
 void     spice_egl_set_x11_window_visual     (SpiceDisplay *display, GtkWidget *widget);
 gboolean spice_egl_update_scanout            (SpiceDisplay *display,
