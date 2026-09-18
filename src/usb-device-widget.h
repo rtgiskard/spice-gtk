@@ -55,4 +55,5 @@ SPICE_GTK_AVAILABLE_IN_0_9
 GtkWidget *spice_usb_device_widget_new(SpiceSession    *session,
                                        const gchar     *device_format_string);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceUsbDeviceWidget, g_object_unref)
 G_END_DECLS

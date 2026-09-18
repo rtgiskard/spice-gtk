@@ -107,8 +107,8 @@ static void output_queue_flush_cb(GObject *source_object,
                                   GAsyncResult *res,
                                   gpointer user_data)
 {
-    GError *error = NULL;
-    OutputQueueElem *e = user_data;
+    g_autoptr(GError) error = NULL;
+    g_autofree OutputQueueElem *e = user_data;
     OutputQueue *q = e->queue;
 
     q->flushing = FALSE;
@@ -117,19 +117,15 @@ static void output_queue_flush_cb(GObject *source_object,
     if (error)
         g_warning("error: %s", error->message);
 
-    g_clear_error(&error);
-
     if (!q->idle_id)
         q->idle_id = g_idle_add(output_queue_idle, q);
-
-    g_free(e);
 }
 
 static gboolean output_queue_idle(gpointer user_data)
 {
     OutputQueue *q = user_data;
     OutputQueueElem *e;
-    GError *error = NULL;
+    g_autoptr(GError) error = NULL;
 
     if (q->flushing) {
         q->idle_id = 0;
@@ -156,7 +152,6 @@ err:
     g_warning("failed to write to output stream");
     if (error)
         g_warning("error: %s", error->message);
-    g_clear_error(&error);
 
     q->idle_id = 0;
     return G_SOURCE_REMOVE;
@@ -214,6 +209,8 @@ client_ref(Client *client)
     client->refs++;
     return client;
 }
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(Client, client_unref)
 
 static bool client_start_read(Client *client);
 
@@ -363,12 +360,12 @@ static void start_client(SpiceWebdavChannel *self)
 {
 #ifdef USE_PHODAV
     SpiceWebdavChannelPrivate *c = self->priv;
-    Client *client;
-    GIOStream *peer = NULL;
+    g_autoptr(Client) client = NULL;
+    g_autoptr(GIOStream) peer = NULL;
     SpiceSession *session;
     SoupServer *server;
-    GSocketAddress *addr;
-    GError *error = NULL;
+    g_autoptr(GSocketAddress) addr = NULL;
+    g_autoptr(GError) error = NULL;
     bool started;
 
     session = spice_channel_get_session(SPICE_CHANNEL(self));
@@ -385,26 +382,16 @@ static void start_client(SpiceWebdavChannel *self)
     spice_make_pipe(&client->pipe, &peer);
 
     addr = g_inet_socket_address_new_from_string ("127.0.0.1", 0);
-    if (!soup_server_accept_iostream(server, peer, addr, addr, &error))
-        goto fail;
+    if (!soup_server_accept_iostream(server, peer, addr, addr, &error)) {
+        CHANNEL_DEBUG(self, "failed to start client: %s", error->message);
+        return;
+    }
 
-    g_hash_table_insert(c->clients, &client->id, client);
+    g_hash_table_insert(c->clients, &client->id, client_ref(client));
 
     started = client_start_read(client);
     g_assert(started);
     demux_to_client(client);
-
-    g_clear_object(&addr);
-    return;
-
-fail:
-    if (error)
-        CHANNEL_DEBUG(self, "failed to start client: %s", error->message);
-
-    g_clear_object(&addr);
-    g_clear_object(&peer);
-    g_clear_error(&error);
-    client_unref(client);
 #endif
 }
 
@@ -415,7 +402,7 @@ static void data_read_cb(GObject *source_object,
     SpiceWebdavChannel *self = user_data;
     SpiceWebdavChannelPrivate *c;
     Client *client;
-    GError *error = NULL;
+    g_autoptr(GError) error = NULL;
     gssize size;
 
     size = spice_vmc_input_stream_read_all_finish(G_INPUT_STREAM(source_object), res, &error);
@@ -423,7 +410,6 @@ static void data_read_cb(GObject *source_object,
         if (!g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
             g_warning("error: %s", error->message);
         }
-        g_clear_error(&error);
         return;
     }
 
@@ -434,8 +420,7 @@ static void data_read_cb(GObject *source_object,
 
     if (client && g_output_stream_is_closed(g_io_stream_get_output_stream(client->pipe))) {
         CHANNEL_DEBUG(self, "found client %p, but it's already closed, removing", client);
-        remove_client(client);
-        client = NULL;
+        g_clear_pointer(&client, remove_client);
     }
 
     if (client)
@@ -456,7 +441,7 @@ static void size_read_cb(GObject *source_object,
     SpiceWebdavChannel *self = user_data;
     SpiceWebdavChannelPrivate *c;
     GInputStream *istream = G_INPUT_STREAM(source_object);
-    GError *error = NULL;
+    g_autoptr(GError) error = NULL;
     gssize size;
 
     size = spice_vmc_input_stream_read_all_finish(G_INPUT_STREAM(source_object), res, &error);
@@ -475,7 +460,6 @@ end:
         if (!g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
             g_warning("error: %s", error->message);
         }
-        g_clear_error(&error);
     }
 }
 
@@ -486,7 +470,7 @@ static void client_read_cb(GObject *source_object,
     SpiceWebdavChannel *self = user_data;
     SpiceWebdavChannelPrivate *c = self->priv;
     GInputStream *istream = G_INPUT_STREAM(source_object);
-    GError *error = NULL;
+    g_autoptr(GError) error = NULL;
     gssize size;
 
     size = spice_vmc_input_stream_read_all_finish(G_INPUT_STREAM(source_object), res, &error);
@@ -504,7 +488,6 @@ end:
         if (!g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
             g_warning("error: %s", error->message);
         }
-        g_clear_error(&error);
     }
 }
 

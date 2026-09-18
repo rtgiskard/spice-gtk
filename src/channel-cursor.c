@@ -56,10 +56,11 @@ struct _SpiceCursorChannelPrivate {
 };
 
 /* Properties */
-enum {
-    PROP_0,
-    PROP_CURSOR,
-};
+typedef enum {
+    PROP_CURSOR = 1,
+} SpiceCursorChannelProps;
+
+static GParamSpec *props[PROP_CURSOR + 1] = { NULL, };
 
 enum {
     SPICE_CURSOR_SET,
@@ -156,12 +157,9 @@ static void spice_cursor_channel_get_property(GObject    *object,
     SpiceCursorChannel *channel = SPICE_CURSOR_CHANNEL(object);
     SpiceCursorChannelPrivate *c = channel->priv;
 
-    switch (prop_id) {
+    switch ((SpiceCursorChannelProps) prop_id) {
     case PROP_CURSOR:
         g_value_set_static_boxed(value, c->last_cursor.data ? &c->last_cursor : NULL);
-        break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
         break;
     }
 }
@@ -183,14 +181,12 @@ static void spice_cursor_channel_class_init(SpiceCursorChannelClass *klass)
      *
      * Since: 0.34
      */
-    g_object_class_install_property
-        (gobject_class, PROP_CURSOR,
-         g_param_spec_boxed("cursor",
-                            "Last cursor shape",
-                            "Last cursor shape received from the server",
-                            SPICE_TYPE_CURSOR_SHAPE,
-                            G_PARAM_READABLE |
-                            G_PARAM_STATIC_STRINGS));
+    props[PROP_CURSOR] = g_param_spec_boxed("cursor",
+                                            NULL, NULL,
+                                            SPICE_TYPE_CURSOR_SHAPE,
+                                            G_PARAM_READABLE | G_PARAM_STATIC_NAME);
+
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
     /**
      * SpiceCursorChannel::cursor-set:
      * @cursor: the #SpiceCursorChannel that emitted the signal

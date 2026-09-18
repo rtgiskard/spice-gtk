@@ -162,4 +162,5 @@ SPICE_GTK_DEPRECATED_IN_0_35_FOR(spice_main_channel_request_mouse_mode)
 void spice_main_request_mouse_mode(SpiceMainChannel *channel, int mode);
 #endif
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceMainChannel, g_object_unref)
 G_END_DECLS

@@ -48,17 +48,15 @@ GIOCondition g_coroutine_socket_wait(GCoroutine *self,
                                      GIOCondition cond)
 {
     GIOCondition *ret, val = 0;
-    GSource *src;
 
     g_return_val_if_fail(self != NULL, 0);
     g_return_val_if_fail(self->wait_id == 0, 0);
     g_return_val_if_fail(sock != NULL, 0);
 
-    src = g_socket_create_source(sock, cond | G_IO_HUP | G_IO_ERR | G_IO_NVAL, NULL);
+    g_autoptr(GSource) src = g_socket_create_source(sock, cond | G_IO_HUP | G_IO_ERR | G_IO_NVAL, NULL);
     g_source_set_callback(src, (GSourceFunc)g_io_wait_helper, self, NULL);
     self->wait_id = g_source_attach(src, NULL);
     ret = coroutine_yield(NULL);
-    g_source_unref(src);
 
     if (ret != NULL)
         val = *ret;
@@ -76,8 +74,7 @@ void g_coroutine_condition_cancel(GCoroutine *coroutine)
     if (coroutine->condition_id == 0)
         return;
 
-    g_source_remove(coroutine->condition_id);
-    coroutine->condition_id = 0;
+    g_clear_handle_id(&coroutine->condition_id, g_source_remove);
 }
 
 void g_coroutine_wakeup(GCoroutine *coroutine)
@@ -145,7 +142,6 @@ static gboolean g_condition_wait_helper(gpointer data)
  */
 gboolean g_coroutine_condition_wait(GCoroutine *self, GConditionWaitFunc func, gpointer data)
 {
-    GSource *src;
     GConditionWaitSource *vsrc;
 
     g_return_val_if_fail(self != NULL, FALSE);
@@ -160,7 +156,7 @@ gboolean g_coroutine_condition_wait(GCoroutine *self, GConditionWaitFunc func, g
      * Don't have it, so yield to the main loop, checking the condition
      * on each iteration of the main loop
      */
-    src = g_source_new(&waitFuncs, sizeof(GConditionWaitSource));
+    g_autoptr(GSource) src = g_source_new(&waitFuncs, sizeof(GConditionWaitSource));
     vsrc = (GConditionWaitSource *)src;
 
     vsrc->func = func;
@@ -169,7 +165,6 @@ gboolean g_coroutine_condition_wait(GCoroutine *self, GConditionWaitFunc func, g
     self->condition_id = g_source_attach(src, NULL);
     g_source_set_callback(src, g_condition_wait_helper, self, NULL);
     coroutine_yield(NULL);
-    g_source_unref(src);
 
     /* it got woked up / cancelled? */
     if (self->condition_id == 0)
@@ -190,7 +185,7 @@ struct signal_data
     va_list var_args;
 };
 
-static gboolean emit_main_context(gpointer opaque)
+static void emit_main_context(gpointer opaque)
 {
     struct signal_data *signal = opaque;
 
@@ -199,8 +194,6 @@ static gboolean emit_main_context(gpointer opaque)
     signal->notified = TRUE;
 
     coroutine_yieldto(signal->caller, NULL);
-
-    return FALSE;
 }
 
 void
@@ -220,7 +213,7 @@ g_coroutine_signal_emit(gpointer instance, guint signal_id,
         g_signal_emit_valist(instance, signal_id, detail, data.var_args);
     } else {
         g_object_ref(instance);
-        G_GNUC_UNUSED guint idle_id = g_idle_add(emit_main_context, &data);
+        G_GNUC_UNUSED guint idle_id = g_idle_add_once(emit_main_context, &data);
         coroutine_yield(NULL);
         g_warn_if_fail(data.notified);
         g_object_unref(instance);
@@ -230,7 +223,7 @@ g_coroutine_signal_emit(gpointer instance, guint signal_id,
 }
 
 
-static gboolean notify_main_context(gpointer opaque)
+static void notify_main_context(gpointer opaque)
 {
     struct signal_data *signal = opaque;
 
@@ -238,8 +231,6 @@ static gboolean notify_main_context(gpointer opaque)
     signal->notified = TRUE;
 
     coroutine_yieldto(signal->caller, NULL);
-
-    return FALSE;
 }
 
 /* coroutine -> main context */
@@ -257,7 +248,7 @@ void g_coroutine_object_notify(GObject *object,
         data.propname = (gpointer)property_name;
         data.notified = FALSE;
 
-        G_GNUC_UNUSED guint idle_id = g_idle_add(notify_main_context, &data);
+        G_GNUC_UNUSED guint idle_id = g_idle_add_once(notify_main_context, &data);
 
         /* This switches to the system coroutine context, lets
          * the idle function run to dispatch the signal, and

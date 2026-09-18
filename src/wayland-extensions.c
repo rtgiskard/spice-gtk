@@ -188,10 +188,9 @@ spice_wayland_extensions_init(GtkWidget *widget)
     // control_fds is used to communicate between the main thread and the created event queue thread
     // When the write end of the pipe is closed, the event queue thread will exit
     gint *control_fds = g_new(gint, 2);
-    GError *error = NULL;
+    g_autoptr(GError) error = NULL;
     if (!g_unix_open_pipe(control_fds, O_CLOEXEC, &error)) {
         g_warning("Failed to create control pipe: %s", error->message);
-        g_error_free(error);
         return;
     }
     g_object_set_data(G_OBJECT(widget), "control_fds", control_fds);
@@ -209,14 +208,13 @@ spice_wayland_extensions_finalize(GtkWidget *widget)
 {
     g_return_if_fail(GTK_IS_WIDGET(widget));
 
-    gint *control_fds = g_object_get_data(G_OBJECT(widget), "control_fds");
+    g_autofree gint *control_fds = g_object_get_data(G_OBJECT(widget), "control_fds");
     if (control_fds == NULL) {
         return;
     }
     gint control_write_fd = control_fds[1];
     close(control_write_fd);
     g_thread_join(g_object_get_data(G_OBJECT(widget), "spice-wayland-thread"));
-    g_free(control_fds);
 }
 
 

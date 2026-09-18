@@ -66,4 +66,5 @@ struct _SpiceWebdavChannelClass {
 SPICE_GTK_AVAILABLE_IN_0_24
 GType spice_webdav_channel_get_type(void);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceWebdavChannel, g_object_unref)
 G_END_DECLS

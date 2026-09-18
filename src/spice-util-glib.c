@@ -37,9 +37,8 @@ static void spice_util_enable_debug_messages(void)
     } else if (g_str_equal(doms, "all")) {
         return;
     } else if (!strstr(doms, G_LOG_DOMAIN)) {
-        gchar *newdoms = g_strdup_printf("%s %s", doms, G_LOG_DOMAIN);
+        g_autofree gchar *newdoms = g_strdup_printf("%s %s", doms, G_LOG_DOMAIN);
         g_setenv("G_MESSAGES_DEBUG", newdoms, 1);
-        g_free(newdoms);
     }
 }
 

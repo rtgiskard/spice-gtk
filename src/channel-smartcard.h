@@ -66,4 +66,5 @@ struct _SpiceSmartcardChannelClass {
 SPICE_GTK_AVAILABLE_IN_0_7
 GType spice_smartcard_channel_get_type(void);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceSmartcardChannel, g_object_unref)
 G_END_DECLS

@@ -138,9 +138,8 @@ struct spice_migrate {
 G_DEFINE_TYPE_WITH_PRIVATE(SpiceMainChannel, spice_main_channel, SPICE_TYPE_CHANNEL)
 
 /* Properties */
-enum {
-    PROP_0,
-    PROP_MOUSE_MODE,
+typedef enum {
+    PROP_MOUSE_MODE = 1,
     PROP_AGENT_CONNECTED,
     PROP_AGENT_CAPS_0,
     PROP_DISPLAY_DISABLE_WALLPAPER,
@@ -150,7 +149,9 @@ enum {
     PROP_DISABLE_DISPLAY_POSITION,
     PROP_DISABLE_DISPLAY_ALIGN,
     PROP_MAX_CLIPBOARD,
-};
+} SpiceMainChannelProps;
+
+static GParamSpec *props[PROP_MAX_CLIPBOARD + 1] = { NULL, };
 
 /* Signals */
 enum {
@@ -285,7 +286,7 @@ static void spice_main_get_property(GObject    *object,
     SpiceMainChannel *self = SPICE_MAIN_CHANNEL(object);
     SpiceMainChannelPrivate *c = self->priv;
 
-    switch (prop_id) {
+    switch ((SpiceMainChannelProps) prop_id) {
     case PROP_MOUSE_MODE:
         g_value_set_int(value, c->mouse_mode);
         break;
@@ -316,9 +317,6 @@ static void spice_main_get_property(GObject    *object,
     case PROP_MAX_CLIPBOARD:
         g_value_set_int(value, spice_main_get_max_clipboard(self));
         break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
-        break;
     }
 }
 
@@ -328,7 +326,7 @@ static void spice_main_set_property(GObject *gobject, guint prop_id,
     SpiceMainChannel *self = SPICE_MAIN_CHANNEL(gobject);
     SpiceMainChannelPrivate *c = self->priv;
 
-    switch (prop_id) {
+    switch ((SpiceMainChannelProps) prop_id) {
     case PROP_DISPLAY_DISABLE_WALLPAPER:
         c->display_disable_wallpaper = g_value_get_boolean(value);
         break;
@@ -350,8 +348,10 @@ static void spice_main_set_property(GObject *gobject, guint prop_id,
     case PROP_MAX_CLIPBOARD:
         spice_main_set_max_clipboard(self, g_value_get_int(value));
         break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
+    case PROP_AGENT_CAPS_0:
+    case PROP_MOUSE_MODE:
+    case PROP_AGENT_CONNECTED:
+        g_assert_not_reached();
         break;
     }
 }
@@ -360,20 +360,11 @@ static void spice_main_channel_dispose(GObject *obj)
 {
     SpiceMainChannelPrivate *c = SPICE_MAIN_CHANNEL(obj)->priv;
 
-    if (c->timer_id) {
-        g_source_remove(c->timer_id);
-        c->timer_id = 0;
-    }
+    g_clear_handle_id(&c->timer_id, g_source_remove);
 
-    if (c->switch_host_delayed_id) {
-        g_source_remove(c->switch_host_delayed_id);
-        c->switch_host_delayed_id = 0;
-    }
+    g_clear_handle_id(&c->switch_host_delayed_id, g_source_remove);
 
-    if (c->migrate_delayed_id) {
-        g_source_remove(c->migrate_delayed_id);
-        c->migrate_delayed_id = 0;
-    }
+    g_clear_handle_id(&c->migrate_delayed_id, g_source_remove);
 
     g_clear_pointer(&c->file_xfer_tasks, g_hash_table_unref);
     g_clear_pointer (&c->flushing, g_hash_table_unref);
@@ -483,78 +474,40 @@ static void spice_main_channel_class_init(SpiceMainChannelClass *klass)
      * client sends relative mouse movements and the server sends
      * position and shape commands.
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_MOUSE_MODE,
-         g_param_spec_int("mouse-mode",
-                          "Mouse mode",
-                          "Mouse mode",
-                          0, INT_MAX, 0,
-                          G_PARAM_READABLE |
-                          G_PARAM_STATIC_NAME |
-                          G_PARAM_STATIC_NICK |
-                          G_PARAM_STATIC_BLURB));
+    props[PROP_MOUSE_MODE] = g_param_spec_int("mouse-mode",
+                                              NULL, NULL,
+                                              0, INT_MAX, 0,
+                                              G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
-    g_object_class_install_property
-        (gobject_class, PROP_AGENT_CONNECTED,
-         g_param_spec_boolean("agent-connected",
-                              "Agent connected",
-                              "Whether the agent is connected",
-                              FALSE,
-                              G_PARAM_READABLE |
-                              G_PARAM_STATIC_NAME |
-                              G_PARAM_STATIC_NICK |
-                              G_PARAM_STATIC_BLURB));
+    props[PROP_AGENT_CONNECTED] = g_param_spec_boolean("agent-connected",
+                                                       NULL, NULL,
+                                                       FALSE,
+                                                       G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
-    g_object_class_install_property
-        (gobject_class, PROP_AGENT_CAPS_0,
-         g_param_spec_int("agent-caps-0",
-                          "Agent caps 0",
-                          "Agent capability bits 0 -> 31",
-                          0, INT_MAX, 0,
-                          G_PARAM_READABLE |
-                          G_PARAM_STATIC_NAME |
-                          G_PARAM_STATIC_NICK |
-                          G_PARAM_STATIC_BLURB));
+    props[PROP_AGENT_CAPS_0] = g_param_spec_int("agent-caps-0",
+                                                NULL, NULL,
+                                                0, INT_MAX, 0,
+                                                G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
-    g_object_class_install_property
-        (gobject_class, PROP_DISPLAY_DISABLE_WALLPAPER,
-         g_param_spec_boolean("disable-wallpaper",
-                              "Disable guest wallpaper",
-                              "Disable guest wallpaper",
-                              FALSE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_CONSTRUCT |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_DISPLAY_DISABLE_WALLPAPER] = g_param_spec_boolean("disable-wallpaper",
+                                                                 NULL, NULL,
+                                                                 FALSE,
+                                                                 G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
-    g_object_class_install_property
-        (gobject_class, PROP_DISPLAY_DISABLE_FONT_SMOOTH,
-         g_param_spec_boolean("disable-font-smooth",
-                              "Disable guest font smooth",
-                              "Disable guest font smoothing",
-                              FALSE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_CONSTRUCT |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_DISPLAY_DISABLE_FONT_SMOOTH] = g_param_spec_boolean("disable-font-smooth",
+                                                                   NULL, NULL,
+                                                                   FALSE,
+                                                                   G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
-    g_object_class_install_property
-        (gobject_class, PROP_DISPLAY_DISABLE_ANIMATION,
-         g_param_spec_boolean("disable-animation",
-                              "Disable guest animations",
-                              "Disable guest animations",
-                              FALSE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_CONSTRUCT |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_DISPLAY_DISABLE_ANIMATION] = g_param_spec_boolean("disable-animation",
+                                                                 NULL, NULL,
+                                                                 FALSE,
+                                                                 G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
-    g_object_class_install_property
-        (gobject_class, PROP_DISABLE_DISPLAY_POSITION,
-         g_param_spec_boolean("disable-display-position",
-                              "Disable display position",
-                              "Disable using display position when setting monitor config",
-                              TRUE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_CONSTRUCT |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_DISABLE_DISPLAY_POSITION] = g_param_spec_boolean("disable-display-position",
+                                                                NULL, NULL,
+                                                                TRUE,
+                                                                G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceMainChannel:color-depth:
@@ -563,15 +516,9 @@ static void spice_main_channel_class_init(SpiceMainChannelClass *klass)
      * This option is currently ignored.
      *
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_DISPLAY_COLOR_DEPTH,
-         g_param_spec_uint("color-depth",
-                           "Color depth",
-                           "Color depth", 0, 32, 0,
-                           G_PARAM_DEPRECATED |
-                           G_PARAM_READWRITE |
-                           G_PARAM_CONSTRUCT |
-                           G_PARAM_STATIC_STRINGS));
+    props[PROP_DISPLAY_COLOR_DEPTH] = g_param_spec_uint("color-depth",
+                                                        NULL, NULL, 0, 32, 0,
+                                                        G_PARAM_DEPRECATED | G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceMainChannel:disable-display-align:
@@ -580,15 +527,10 @@ static void spice_main_channel_class_init(SpiceMainChannelClass *klass)
      *
      * Since: 0.13
      */
-    g_object_class_install_property
-        (gobject_class, PROP_DISABLE_DISPLAY_ALIGN,
-         g_param_spec_boolean("disable-display-align",
-                              "Disable display align",
-                              "Disable display position alignment",
-                              FALSE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_CONSTRUCT |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_DISABLE_DISPLAY_ALIGN] = g_param_spec_boolean("disable-display-align",
+                                                             NULL, NULL,
+                                                             FALSE,
+                                                             G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceMainChannel:max-clipboard:
@@ -598,15 +540,12 @@ static void spice_main_channel_class_init(SpiceMainChannelClass *klass)
      *
      * Since: 0.22
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_MAX_CLIPBOARD,
-         g_param_spec_int("max-clipboard",
-                          "max clipboard",
-                          "Maximum clipboard data size",
-                          -1, G_MAXINT, 100 * 1024 * 1024,
-                          G_PARAM_READWRITE |
-                          G_PARAM_CONSTRUCT |
-                          G_PARAM_STATIC_STRINGS));
+    props[PROP_MAX_CLIPBOARD] = g_param_spec_int("max-clipboard",
+                                                 NULL, NULL,
+                                                 -1, G_MAXINT, 100 * 1024 * 1024,
+                                                 G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
+
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 
     /* TODO use notify instead */
     /**
@@ -870,14 +809,12 @@ static void spice_main_channel_class_init(SpiceMainChannelClass *klass)
 static void agent_free_msg_queue(SpiceMainChannel *channel)
 {
     SpiceMainChannelPrivate *c = channel->priv;
-    SpiceMsgOut *out;
 
     if (!c->agent_msg_queue)
         return;
 
     while (!g_queue_is_empty(c->agent_msg_queue)) {
-        out = g_queue_pop_head(c->agent_msg_queue);
-        spice_msg_out_unref(out);
+        spice_msg_out_unref(g_queue_pop_head(c->agent_msg_queue));
     }
 
     g_clear_pointer(&c->agent_msg_queue, g_queue_free);
@@ -904,7 +841,7 @@ static void file_xfer_flush_async(SpiceFileTransferTask *xfer_task,
                                   GAsyncReadyCallback callback,
                                   gpointer user_data)
 {
-    GTask *task;
+    g_autoptr(GTask) task = NULL;
     SpiceMainChannel *channel;
     SpiceMainChannelPrivate *c;
     gboolean was_empty;
@@ -914,17 +851,18 @@ static void file_xfer_flush_async(SpiceFileTransferTask *xfer_task,
                       spice_file_transfer_task_get_cancellable(xfer_task),
                       callback,
                       user_data);
+    g_task_set_source_tag(task, file_xfer_flush_async);
 
     c = channel->priv;
     was_empty = g_queue_is_empty(c->agent_msg_queue);
     if (was_empty) {
         g_task_return_boolean(task, TRUE);
-        g_object_unref(task);
         return;
     }
 
     /* wait until the last message currently in the queue has been sent */
-    g_hash_table_insert(c->flushing, g_queue_peek_tail(c->agent_msg_queue), task);
+    g_hash_table_insert(c->flushing, g_queue_peek_tail(c->agent_msg_queue),
+                        g_steal_pointer(&task));
 }
 
 static gboolean file_xfer_flush_finish(SpiceFileTransferTask *xfer_task,
@@ -946,7 +884,7 @@ static void agent_send_msg_queue(SpiceMainChannel *channel)
 
     while (c->agent_tokens > 0 &&
            !g_queue_is_empty(c->agent_msg_queue)) {
-        GTask *task;
+        g_autoptr(GTask) task = NULL;
         c->agent_tokens--;
         out = g_queue_pop_head(c->agent_msg_queue);
         spice_msg_out_send_internal(out);
@@ -956,7 +894,6 @@ static void agent_send_msg_queue(SpiceMainChannel *channel)
             /* if there's a flush task waiting for this message, finish it */
             g_hash_table_remove(c->flushing, out);
             g_task_return_boolean(task, TRUE);
-            g_object_unref(task);
         }
     }
     if (g_queue_is_empty(c->agent_msg_queue) &&
@@ -1050,7 +987,7 @@ static void monitors_align(VDAgentMonConfig *monitors, int nmonitors)
 {
     gint i, j, x = 0;
     guint32 used = 0;
-    VDAgentMonConfig *sorted_monitors;
+    g_autofree VDAgentMonConfig *sorted_monitors = NULL;
 
     if (nmonitors == 0)
         return;
@@ -1079,7 +1016,6 @@ static void monitors_align(VDAgentMonConfig *monitors, int nmonitors)
             SPICE_DEBUG("#%d +%d+%d-%ux%u", j, monitors[j].x, monitors[j].y,
                         monitors[j].width, monitors[j].height);
     }
-    g_free(sorted_monitors);
 }
 
 
@@ -1116,7 +1052,7 @@ gboolean spice_main_send_monitor_config(SpiceMainChannel *channel)
 gboolean spice_main_channel_send_monitor_config(SpiceMainChannel *channel)
 {
     SpiceMainChannelPrivate *c;
-    VDAgentMonitorsConfig *mon;
+    g_autofree VDAgentMonitorsConfig *mon = NULL;
     int i, j, monitors;
     size_t size;
 
@@ -1184,13 +1120,9 @@ gboolean spice_main_channel_send_monitor_config(SpiceMainChannel *channel)
         monitors_align(mon->monitors, mon->num_of_monitors);
 
     agent_msg_queue(channel, VD_AGENT_MONITORS_CONFIG, size, mon);
-    g_free(mon);
 
     spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
-    if (c->timer_id != 0) {
-        g_source_remove(c->timer_id);
-        c->timer_id = 0;
-    }
+    g_clear_handle_id(&c->timer_id, g_source_remove);
 
     return TRUE;
 }
@@ -1204,19 +1136,18 @@ static void audio_playback_volume_info_cb(GObject *object, GAsyncResult *res, gp
 {
     SpiceMainChannel *main_channel = user_data;
     SpiceAudio *audio = spice_main_get_audio(main_channel);
-    VDAgentAudioVolumeSync *avs;
-    guint16 *volume;
+    g_autofree VDAgentAudioVolumeSync *avs = NULL;
+    g_autofree guint16 *volume = NULL;
     guint8 nchannels;
     gboolean mute, ret;
     gsize array_size;
-    GError *error = NULL;
+    g_autoptr(GError) error = NULL;
 
     ret = spice_audio_get_playback_volume_info_finish(audio, res, &mute, &nchannels,
                                                       &volume, &error);
     if (ret == FALSE || volume == NULL || nchannels == 0) {
         if (error != NULL) {
             SPICE_DEBUG("Failed to get playback async volume info: %s", error->message);
-            g_error_free(error);
         } else {
             SPICE_DEBUG("Failed to get playback async volume info");
         }
@@ -1233,10 +1164,8 @@ static void audio_playback_volume_info_cb(GObject *object, GAsyncResult *res, gp
 
     SPICE_DEBUG("%s mute=%s nchannels=%u volume[0]=%u",
                 __func__, spice_yes_no(mute), nchannels, volume[0]);
-    g_free(volume);
     agent_msg_queue(main_channel, VD_AGENT_AUDIO_VOLUME_SYNC,
                     sizeof(VDAgentAudioVolumeSync) + array_size, avs);
-    g_free (avs);
 }
 
 static void agent_sync_audio_playback(SpiceMainChannel *main_channel)
@@ -1261,18 +1190,17 @@ static void audio_record_volume_info_cb(GObject *object, GAsyncResult *res, gpoi
 {
     SpiceMainChannel *main_channel = user_data;
     SpiceAudio *audio = spice_main_get_audio(main_channel);
-    VDAgentAudioVolumeSync *avs;
-    guint16 *volume;
+    g_autofree VDAgentAudioVolumeSync *avs = NULL;
+    g_autofree guint16 *volume = NULL;
     guint8 nchannels;
     gboolean ret, mute;
     gsize array_size;
-    GError *error = NULL;
+    g_autoptr(GError) error = NULL;
 
     ret = spice_audio_get_record_volume_info_finish(audio, res, &mute, &nchannels, &volume, &error);
     if (ret == FALSE || volume == NULL || nchannels == 0) {
         if (error != NULL) {
             SPICE_DEBUG("Failed to get record async volume info: %s", error->message);
-            g_error_free(error);
         } else {
             SPICE_DEBUG("Failed to get record async volume info");
         }
@@ -1289,10 +1217,8 @@ static void audio_record_volume_info_cb(GObject *object, GAsyncResult *res, gpoi
 
     SPICE_DEBUG("%s mute=%s nchannels=%u volume[0]=%u",
                 __func__, spice_yes_no(mute), nchannels, volume[0]);
-    g_free(volume);
     agent_msg_queue(main_channel, VD_AGENT_AUDIO_VOLUME_SYNC,
                     sizeof(VDAgentAudioVolumeSync) + array_size, avs);
-    g_free (avs);
 }
 
 static void agent_sync_audio_record(SpiceMainChannel *main_channel)
@@ -1342,7 +1268,7 @@ static void agent_display_config(SpiceMainChannel *channel)
 static void agent_announce_caps(SpiceMainChannel *channel)
 {
     SpiceMainChannelPrivate *c = channel->priv;
-    VDAgentAnnounceCapabilities *caps;
+    g_autofree VDAgentAnnounceCapabilities *caps = NULL;
     size_t size;
 
     if (!c->agent_connected)
@@ -1364,7 +1290,6 @@ static void agent_announce_caps(SpiceMainChannel *channel)
     VD_AGENT_SET_CAPABILITY(caps->caps, VD_AGENT_CAP_CLIPBOARD_GRAB_SERIAL);
 
     agent_msg_queue(channel, VD_AGENT_ANNOUNCE_CAPABILITIES, size, caps);
-    g_free(caps);
 }
 
 /* any context: the message is not flushed immediately,
@@ -1530,7 +1455,7 @@ static gboolean any_display_has_dimensions(SpiceMainChannel *channel)
 }
 
 /* main context*/
-static gboolean timer_set_display(gpointer data)
+static void timer_set_display(gpointer data)
 {
     SpiceMainChannel *channel = data;
     SpiceMainChannelPrivate *c = channel->priv;
@@ -1539,11 +1464,11 @@ static gboolean timer_set_display(gpointer data)
 
     c->timer_id = 0;
     if (!c->agent_connected)
-        return FALSE;
+        return;
 
     if (!any_display_has_dimensions(channel)) {
         SPICE_DEBUG("Not sending monitors config, at least one monitor must have dimensions");
-        return FALSE;
+        return;
     }
 
     session = spice_channel_get_session(SPICE_CHANNEL(channel));
@@ -1554,12 +1479,10 @@ static gboolean timer_set_display(gpointer data)
         for (i = 0; i < spice_session_get_n_display_channels(session); i++)
             if (c->display[i].display_state == DISPLAY_UNDEFINED) {
                 SPICE_DEBUG("Not sending monitors config, missing monitors");
-                return FALSE;
+                return;
             }
     }
     spice_main_channel_send_monitor_config(channel);
-
-    return FALSE;
 }
 
 /* any context  */
@@ -1571,13 +1494,13 @@ static void update_display_timer(SpiceMainChannel *channel, guint seconds)
         g_source_remove(c->timer_id);
 
     if (seconds != 0) {
-        c->timer_id = g_timeout_add_seconds(seconds, timer_set_display, channel);
+        c->timer_id = g_timeout_add_seconds_once(seconds, timer_set_display, channel);
     } else {
         /* We need to special case 0, as we want the callback to fire as soon
          * as possible. g_timeout_add_seconds(0) would set up a timer which would fire
          * at the next second boundary, which might be nearly 1 full second later.
          */
-        c->timer_id = g_timeout_add(0, timer_set_display, channel);
+        c->timer_id = g_timeout_add_once(0, timer_set_display, channel);
     }
 
 }
@@ -1738,12 +1661,10 @@ static void main_handle_uuid(SpiceChannel *channel, SpiceMsgIn *in)
 {
     SpiceMsgMainUuid *uuid = spice_msg_in_parsed(in);
     SpiceSession *session = spice_channel_get_session(channel);
-    gchar *uuid_str = spice_uuid_to_string(uuid->uuid);
+    g_autofree gchar *uuid_str = spice_uuid_to_string(uuid->uuid);
 
     SPICE_DEBUG("server uuid: %s", uuid_str);
     spice_session_set_uuid(session, uuid->uuid);
-
-    g_free(uuid_str);
 }
 
 /* coroutine context */
@@ -1763,16 +1684,14 @@ typedef struct channel_new {
 } channel_new_t;
 
 /* main context */
-static gboolean _channel_new(channel_new_t *c)
+static void _channel_new(channel_new_t *c)
 {
-    g_return_val_if_fail(c != NULL, FALSE);
+    g_return_if_fail(c != NULL);
 
     spice_channel_new(c->session, c->type, c->id);
 
     g_object_unref(c->session);
     g_free(c);
-
-    return FALSE;
 }
 
 /* coroutine context */
@@ -1797,7 +1716,7 @@ static void main_handle_channels_list(SpiceChannel *channel, SpiceMsgIn *in)
         c->id = msg->channels[i].id;
         /* no need to explicitly switch to main context, since
            synchronous call is not needed. */
-        G_GNUC_UNUSED guint idle_id = g_idle_add((GSourceFunc)_channel_new, c);
+        G_GNUC_UNUSED guint idle_id = g_idle_add_once((GSourceOnceFunc) _channel_new, c);
     }
 }
 
@@ -1839,7 +1758,7 @@ static void file_xfer_data_flushed_cb(GObject *source_object,
 
     file_xfer_flush_finish(xfer_task, res, &error);
     if (error) {
-        spice_file_transfer_task_completed(xfer_task, error);
+        spice_file_transfer_task_completed(xfer_task, g_steal_pointer(&error));
         return;
     }
 
@@ -1887,7 +1806,7 @@ static void file_xfer_read_async_cb(GObject *source_object,
     count = spice_file_transfer_task_read_finish(xfer_task, res, &buffer, &error);
     if (count < 0) {
         spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
-        spice_file_transfer_task_completed(xfer_task, error);
+        spice_file_transfer_task_completed(xfer_task, g_steal_pointer(&error));
         return;
     }
 
@@ -1969,13 +1888,11 @@ static void main_agent_handle_xfer_status(SpiceMainChannel *channel,
             break;
         }
 
-        gchar *free_space_str = g_format_size(err->disk_free_space);
-        gchar *file_size_str = g_format_size(spice_file_transfer_task_get_total_bytes(xfer_task));
+        g_autofree gchar *free_space_str = g_format_size(err->disk_free_space);
+        g_autofree gchar *file_size_str = g_format_size(spice_file_transfer_task_get_total_bytes(xfer_task));
         error = g_error_new(SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
                             _("File transfer failed due to lack of free space on remote machine "
                             "(%s free, %s to transfer)"), free_space_str, file_size_str);
-        g_free(free_space_str);
-        g_free(file_size_str);
         break;
     }
     case VD_AGENT_FILE_XFER_STATUS_SESSION_LOCKED:
@@ -2201,8 +2118,7 @@ static void main_handle_agent_data_msg(SpiceChannel* channel, int* msg_size, guc
 
     if (c->agent_msg_pos == sizeof(VDAgentMessage) + c->agent_msg.size) {
         main_agent_handle_msg(channel, &c->agent_msg, c->agent_msg_data);
-        g_free(c->agent_msg_data);
-        c->agent_msg_data = NULL;
+        g_clear_pointer(&c->agent_msg_data, g_free);
         c->agent_msg_pos = 0;
     }
 }
@@ -2265,6 +2181,8 @@ spice_migrate_unref(spice_migrate *mig)
         g_free(mig);
     }
 }
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(spice_migrate, spice_migrate_unref)
 
 static inline void
 spice_migrate_idle_add(gboolean (*func)(spice_migrate *mig), spice_migrate *mig)
@@ -2451,7 +2369,7 @@ static void main_migrate_connect(SpiceChannel *channel,
 {
     SpiceMainChannelPrivate *main_priv = SPICE_MAIN_CHANNEL(channel)->priv;
     int reply_type = SPICE_MSGC_MAIN_MIGRATE_CONNECT_ERROR;
-    spice_migrate *mig;
+    g_autoptr(spice_migrate) mig = NULL;
     SpiceMsgOut *out;
     SpiceSession *session;
 
@@ -2507,7 +2425,6 @@ end:
     CHANNEL_DEBUG(channel, "migrate connect reply %d", reply_type);
     out = spice_msg_out_new(channel, reply_type);
     spice_msg_out_send(out);
-    spice_migrate_unref(mig);
 }
 
 /* coroutine context */
@@ -2555,7 +2472,7 @@ static void main_handle_migrate_dst_seamless_nack(SpiceChannel *channel, SpiceMs
 }
 
 /* main context */
-static gboolean migrate_delayed(gpointer data)
+static void migrate_delayed(gpointer data)
 {
     SpiceChannel *channel = data;
     SpiceMainChannelPrivate *c = SPICE_MAIN_CHANNEL(channel)->priv;
@@ -2564,8 +2481,6 @@ static gboolean migrate_delayed(gpointer data)
     c->migrate_delayed_id = 0;
 
     spice_session_migrate_end(channel->priv->session);
-
-    return FALSE;
 }
 
 /* coroutine context */
@@ -2578,11 +2493,11 @@ static void main_handle_migrate_end(SpiceChannel *channel, SpiceMsgIn *in)
     g_return_if_fail(c->migrate_delayed_id == 0);
     g_return_if_fail(spice_channel_test_capability(channel, SPICE_MAIN_CAP_SEMI_SEAMLESS_MIGRATE));
 
-    c->migrate_delayed_id = g_idle_add(migrate_delayed, channel);
+    c->migrate_delayed_id = g_idle_add_once(migrate_delayed, channel);
 }
 
 /* main context */
-static gboolean switch_host_delayed(gpointer data)
+static void switch_host_delayed(gpointer data)
 {
     SpiceChannel *channel = data;
     SpiceSession *session;
@@ -2595,8 +2510,6 @@ static gboolean switch_host_delayed(gpointer data)
 
     spice_channel_disconnect(channel, SPICE_CHANNEL_SWITCHING);
     spice_session_switching_disconnect(session);
-
-    return FALSE;
 }
 
 /* coroutine context */
@@ -2635,7 +2548,7 @@ static void main_handle_migrate_switch_host(SpiceChannel *channel, SpiceMsgIn *i
     spice_session_set_port(session, mig->port, FALSE);
     spice_session_set_port(session, mig->sport, TRUE);
 
-    c->switch_host_delayed_id = g_idle_add(switch_host_delayed, channel);
+    c->switch_host_delayed_id = g_idle_add_once(switch_host_delayed, channel);
 }
 
 /* coroutine context */
@@ -3189,17 +3102,17 @@ void spice_main_set_display_enabled(SpiceMainChannel *channel, int id, gboolean 
 
 static void file_xfer_init_task_async_cb(GObject *obj, GAsyncResult *res, gpointer data)
 {
-    GFileInfo *info;
+    g_autoptr(GFileInfo) info = NULL;
     SpiceFileTransferTask *xfer_task;
     SpiceMainChannel *channel;
-    gchar *string;
+    g_autofree gchar *string = NULL;
     const gchar *basename;
-    GKeyFile *keyfile;
+    g_autoptr(GKeyFile) keyfile = NULL;
     VDAgentFileXferStartMessage msg;
     guint64 file_size;
     gsize data_len;
     FileTransferOperation *xfer_op;
-    GError *error = NULL;
+    g_autoptr(GError) error = NULL;
 
     xfer_task = SPICE_FILE_TRANSFER_TASK(obj);
 
@@ -3221,7 +3134,6 @@ static void file_xfer_init_task_async_cb(GObject *obj, GAsyncResult *res, gpoint
     /* Save keyfile content to memory. TODO: more file attributions
        need to be sent to guest */
     string = g_key_file_to_data(keyfile, &data_len, &error);
-    g_key_file_free(keyfile);
     if (error)
         goto failed;
 
@@ -3230,14 +3142,11 @@ static void file_xfer_init_task_async_cb(GObject *obj, GAsyncResult *res, gpoint
     agent_msg_queue_many(channel, VD_AGENT_FILE_XFER_START,
                          &msg, sizeof(msg),
                          string, data_len + 1, NULL);
-    g_free(string);
     spice_channel_wakeup(SPICE_CHANNEL(channel), FALSE);
-    g_object_unref(info);
     return;
 
 failed:
-    g_clear_object(&info);
-    spice_file_transfer_task_completed(xfer_task, error);
+    spice_file_transfer_task_completed(xfer_task, g_steal_pointer(&error));
 }
 
 static void file_transfer_operation_free(FileTransferOperation *xfer_op)
@@ -3493,6 +3402,7 @@ void spice_main_channel_file_copy_async(SpiceMainChannel *channel,
     xfer_op->progress_callback = progress_callback;
     xfer_op->progress_callback_data = progress_callback_data;
     xfer_op->task = g_task_new(channel, cancellable, callback, user_data);
+    g_task_set_source_tag(xfer_op->task, spice_main_channel_file_copy_async);
     xfer_op->xfer_task = spice_file_transfer_task_create_tasks(sources,
                                                                channel,
                                                                flags,

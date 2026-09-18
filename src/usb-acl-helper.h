@@ -65,4 +65,5 @@ gboolean spice_usb_acl_helper_open_acl_finish(
 
 void spice_usb_acl_helper_cancel(SpiceUsbAclHelper *self);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceUsbAclHelper, g_object_unref)
 G_END_DECLS

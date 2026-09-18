@@ -110,10 +110,7 @@ static void spice_smartcard_manager_finalize(GObject *gobject)
     SpiceSmartcardManager *manager = SPICE_SMARTCARD_MANAGER(gobject);
     SpiceSmartcardManagerPrivate *priv = manager->priv;
 
-    if (priv->monitor_id != 0) {
-        g_source_remove(priv->monitor_id);
-        priv->monitor_id = 0;
-    }
+    g_clear_handle_id(&priv->monitor_id, g_source_remove);
 
 #ifdef USE_SMARTCARD
     g_clear_pointer(&priv->software_reader, vreader_free);
@@ -326,8 +323,7 @@ static gboolean smartcard_source_dispatch(GSource *source,
         event_consumed = smartcard_callback(smartcard_source->pending_event,
                                             user_data);
         if (event_consumed) {
-            vevent_delete(smartcard_source->pending_event);
-            smartcard_source->pending_event = NULL;
+            g_clear_pointer(&smartcard_source->pending_event, vevent_delete);
         }
     }
 
@@ -359,13 +355,11 @@ static GSource *smartcard_monitor_source_new(void)
 static guint smartcard_monitor_add(SmartcardSourceFunc callback,
                                    gpointer user_data)
 {
-    GSource *source;
     guint id;
 
-    source = smartcard_monitor_source_new();
+    g_autoptr(GSource) source = smartcard_monitor_source_new();
     g_source_set_callback(source, (GSourceFunc)callback, user_data, NULL);
     id = g_source_attach(source, NULL);
-    g_source_unref(source);
 
     return id;
 }
@@ -391,30 +385,24 @@ typedef struct {
 } SmartcardManagerInitArgs;
 
 
-static void smartcard_reader_free(gpointer data)
-{
-    g_boxed_free(SPICE_TYPE_SMARTCARD_READER, data);
-}
-
 /* spice-server only supports one smartcard reader being in use */
 static void smartcard_check_reader_count(void)
 {
-    GList *readers;
+    g_autolist(SpiceSmartcardReader) readers = NULL;
 
     readers = spice_smartcard_manager_get_readers(spice_smartcard_manager_get());
     if (g_list_length(readers) > 1) {
         g_warning("Multiple smartcard readers are plugged in, only the first one will be shared with the VM");
     }
-    g_list_free_full(readers, smartcard_reader_free);
 }
 
 static gboolean smartcard_manager_init(SmartcardManagerInitArgs *args)
 {
-    gchar *emul_args = NULL;
+    g_autofree gchar *emul_args = NULL;
     VCardEmulOptions *options = NULL;
     VCardEmulError emul_init_status;
-    gchar *dbname = NULL;
-    GStrv certificates = NULL;
+    g_autofree gchar *dbname = NULL;
+    g_auto(GStrv) certificates = NULL;
     gboolean retval = FALSE;
 
     SPICE_DEBUG("smartcard_manager_init");
@@ -467,9 +455,6 @@ init:
 
 end:
     SPICE_DEBUG("smartcard_manager_init end: %d", retval);
-    g_free(emul_args);
-    g_free(dbname);
-    g_strfreev(certificates);
     return retval;
 }
 
@@ -503,10 +488,10 @@ void spice_smartcard_manager_init_async(SpiceSession *session,
                                         GAsyncReadyCallback callback,
                                         gpointer opaque)
 {
-    GTask *task = g_task_new(session, cancellable, callback, opaque);
+    g_autoptr(GTask) task = g_task_new(session, cancellable, callback, opaque);
+    g_task_set_source_tag(task, spice_smartcard_manager_init_async);
 
     g_task_run_in_thread(task, smartcard_manager_init_helper);
-    g_object_unref(task);
 }
 
 G_GNUC_INTERNAL

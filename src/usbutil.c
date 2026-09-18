@@ -199,14 +199,12 @@ static gboolean spice_usbutil_load_usbids(void)
 #else
     {
         const gchar * const *dirs = g_get_system_data_dirs();
-        gchar *path = NULL;
         int i;
 
         for (i = 0; dirs[i]; ++i) {
-            path = g_build_filename(dirs[i], "hwdata", "usb.ids", NULL);
+            g_autofree gchar *path = g_build_filename(dirs[i], "hwdata", "usb.ids", NULL);
             success = spice_usbutil_parse_usbids(path);
             SPICE_DEBUG("loading %s success: %s", path, spice_yes_no(success));
-            g_free(path);
 
             if (success)
                 goto leave;

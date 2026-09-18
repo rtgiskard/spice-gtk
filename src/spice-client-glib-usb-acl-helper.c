@@ -162,7 +162,7 @@ static void check_authorization_cb(PolkitAuthority *authority,
                                    GAsyncResult *res, gpointer data)
 {
     PolkitAuthorizationResult *result;
-    GError *err = NULL;
+    g_autoptr(GError) err = NULL;
     struct stat stat_buf;
 
     g_clear_object(&polkit_cancellable);
@@ -170,7 +170,6 @@ static void check_authorization_cb(PolkitAuthority *authority,
     result = polkit_authority_check_authorization_finish(authority, res, &err);
     if (err) {
         FATAL_ERROR("PoliciKit error: %s\n", err->message);
-        g_error_free(err);
         return;
     }
 
@@ -207,8 +206,9 @@ static void check_authorization_cb(PolkitAuthority *authority,
 
 static void stdin_read_complete(GObject *src, GAsyncResult *res, gpointer data)
 {
-    char *s, *ep;
-    GError *err = NULL;
+    g_autofree char *s = NULL;
+    g_autoptr(GError) err = NULL;
+    char *ep;
     gsize len;
 
     s = g_data_input_stream_read_line_finish(G_DATA_INPUT_STREAM(src), res,
@@ -216,7 +216,6 @@ static void stdin_read_complete(GObject *src, GAsyncResult *res, gpointer data)
     if (!s) {
         if (err) {
             FATAL_ERROR("Reading from stdin: %s\n", err->message);
-            g_error_free(err);
             return;
         }
 

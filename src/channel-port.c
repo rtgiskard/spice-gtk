@@ -59,11 +59,12 @@ struct _SpicePortChannelPrivate {
 G_DEFINE_TYPE_WITH_PRIVATE(SpicePortChannel, spice_port_channel, SPICE_TYPE_CHANNEL)
 
 /* Properties */
-enum {
-    PROP_0,
-    PROP_PORT_NAME,
+typedef enum {
+    PROP_PORT_NAME = 1,
     PROP_PORT_OPENED,
-};
+} SpicePortChannelProps;
+
+static GParamSpec *props[PROP_PORT_OPENED + 1] = { NULL, };
 
 /* Signals */
 enum {
@@ -87,15 +88,12 @@ static void spice_port_get_property(GObject    *object,
 {
     SpicePortChannelPrivate *c = SPICE_PORT_CHANNEL(object)->priv;
 
-    switch (prop_id) {
+    switch ((SpicePortChannelProps) prop_id) {
     case PROP_PORT_NAME:
         g_value_set_string(value, c->name);
         break;
     case PROP_PORT_OPENED:
         g_value_set_boolean(value, c->opened);
-        break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
         break;
     }
 }
@@ -129,21 +127,17 @@ static void spice_port_channel_class_init(SpicePortChannelClass *klass)
     gobject_class->get_property = spice_port_get_property;
     channel_class->channel_reset = spice_port_channel_reset;
 
-    g_object_class_install_property
-        (gobject_class, PROP_PORT_NAME,
-         g_param_spec_string("port-name",
-                             "Port name",
-                             "Port name",
-                             NULL,
-                             G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+    props[PROP_PORT_NAME] = g_param_spec_string("port-name",
+                                                NULL, NULL,
+                                                NULL,
+                                                G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
-    g_object_class_install_property
-        (gobject_class, PROP_PORT_OPENED,
-         g_param_spec_boolean("port-opened",
-                              "Port opened",
-                              "Port opened",
-                              FALSE,
-                              G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+    props[PROP_PORT_OPENED] = g_param_spec_boolean("port-opened",
+                                                   NULL, NULL,
+                                                   FALSE,
+                                                   G_PARAM_READABLE | G_PARAM_STATIC_NAME);
+
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 
     /**
      * SpicePortChannel::port-data:

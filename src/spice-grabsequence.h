@@ -53,6 +53,7 @@ void spice_grab_sequence_free(SpiceGrabSequence *sequence);
 SPICE_GTK_AVAILABLE_IN_0_3
 gchar *spice_grab_sequence_as_string(SpiceGrabSequence *sequence);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(SpiceGrabSequence, spice_grab_sequence_free)
 
 G_END_DECLS
 

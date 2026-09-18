@@ -108,10 +108,10 @@ static void spice_uri_reset(SpiceURI *self)
 G_GNUC_INTERNAL
 gboolean spice_uri_parse(SpiceURI *self, const gchar *_uri, GError **error)
 {
-    gchar *dup, *uri, **uriv = NULL;
-    const gchar *uri_port = NULL;
-    char *uri_scheme = NULL;
-    gboolean success = FALSE;
+    g_autofree gchar *dup = NULL;
+    g_auto(GStrv) uriv = NULL;
+    gchar *uri_port = NULL, *uri;
+    g_autofree char *uri_scheme = NULL;
     size_t len;
 
     g_return_val_if_fail(self != NULL, FALSE);
@@ -137,7 +137,7 @@ gboolean spice_uri_parse(SpiceURI *self, const gchar *_uri, GError **error)
     } else {
         g_set_error(error, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
                     "Invalid uri scheme for proxy: %s", spice_uri_get_scheme(self));
-        goto end;
+        return FALSE;
     }
     /* remove trailing slash */
     len = strlen(uri);
@@ -165,14 +165,14 @@ gboolean spice_uri_parse(SpiceURI *self, const gchar *_uri, GError **error)
         if (uriv[1] == NULL) {
             g_set_error(error, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
                         "Missing ']' in ipv6 uri");
-            goto end;
+            return FALSE;
         }
         if (*uriv[1] == ':') {
             uri_port = uriv[1] + 1;
         } else if (strlen(uriv[1]) > 0) { /* invalid string after the hostname */
             g_set_error(error, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
                         "Invalid uri address");
-            goto end;
+            return FALSE;
         }
     } else {
         /* max 2 parts, host:port */
@@ -184,7 +184,7 @@ gboolean spice_uri_parse(SpiceURI *self, const gchar *_uri, GError **error)
     if (uriv[0] == NULL || strlen(uriv[0]) == 0) {
         g_set_error(error, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
                     "Invalid hostname in uri address");
-        goto end;
+        return FALSE;
     }
 
     spice_uri_set_hostname(self, uriv[0]);
@@ -195,25 +195,19 @@ gboolean spice_uri_parse(SpiceURI *self, const gchar *_uri, GError **error)
         if (*endptr != '\0') {
             g_set_error(error, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
                         "Invalid uri port: %s", uri_port);
-            goto end;
+            return FALSE;
         } else if (endptr == uri_port) {
             g_set_error(error, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED, "Missing uri port");
-            goto end;
+            return FALSE;
         }
         if (port <= 0 || port > 65535) {
             g_set_error(error, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED, "Port out of range");
-            goto end;
+            return FALSE;
         }
         spice_uri_set_port(self, port);
     }
 
-    success = TRUE;
-
-end:
-    g_free(uri_scheme);
-    g_free(dup);
-    g_strfreev(uriv);
-    return success;
+    return TRUE;
 }
 
 /**
@@ -243,9 +237,8 @@ void spice_uri_set_scheme(SpiceURI *self, const gchar *scheme)
 {
     g_return_if_fail(SPICE_IS_URI(self));
 
-    g_free(self->scheme);
-    self->scheme = g_strdup(scheme);
-    g_object_notify((GObject *)self, "scheme");
+    if (g_set_str(&self->scheme, scheme))
+        g_object_notify((GObject *)self, "scheme");
 }
 
 /**
@@ -276,9 +269,8 @@ void spice_uri_set_hostname(SpiceURI *self, const gchar *hostname)
 {
     g_return_if_fail(SPICE_IS_URI(self));
 
-    g_free(self->hostname);
-    self->hostname = g_strdup(hostname);
-    g_object_notify((GObject *)self, "hostname");
+    if (g_set_str(&self->hostname, hostname))
+        g_object_notify((GObject *)self, "hostname");
 }
 
 /**
@@ -394,47 +386,37 @@ static void spice_uri_class_init(SpiceURIClass *klass)
     g_object_class_install_property(G_OBJECT_CLASS (klass),
                                     SPICE_URI_SCHEME,
                                     g_param_spec_string ("scheme",
-                                                         "scheme",
-                                                         "scheme",
+                                                         NULL, NULL,
                                                          NULL,
-                                                         G_PARAM_STATIC_STRINGS |
-                                                         G_PARAM_READWRITE));
+                                                         G_PARAM_READWRITE | G_PARAM_STATIC_NAME));
 
     g_object_class_install_property(G_OBJECT_CLASS (klass),
                                     SPICE_URI_HOSTNAME,
                                     g_param_spec_string ("hostname",
-                                                         "hostname",
-                                                         "hostname",
+                                                         NULL, NULL,
                                                          NULL,
-                                                         G_PARAM_STATIC_STRINGS |
-                                                         G_PARAM_READWRITE));
+                                                         G_PARAM_READWRITE | G_PARAM_STATIC_NAME));
 
     g_object_class_install_property(G_OBJECT_CLASS (klass),
                                     SPICE_URI_PORT,
                                     g_param_spec_uint ("port",
-                                                       "port",
-                                                       "port",
+                                                       NULL, NULL,
                                                        0, G_MAXUINT, 0,
-                                                       G_PARAM_STATIC_STRINGS |
-                                                       G_PARAM_READWRITE));
+                                                       G_PARAM_READWRITE | G_PARAM_STATIC_NAME));
 
     g_object_class_install_property(G_OBJECT_CLASS (klass),
                                     SPICE_URI_USER,
                                     g_param_spec_string ("user",
-                                                         "user",
-                                                         "user",
+                                                         NULL, NULL,
                                                          NULL,
-                                                         G_PARAM_STATIC_STRINGS |
-                                                         G_PARAM_READWRITE));
+                                                         G_PARAM_READWRITE | G_PARAM_STATIC_NAME));
 
     g_object_class_install_property(G_OBJECT_CLASS (klass),
                                     SPICE_URI_PASSWORD,
                                     g_param_spec_string ("password",
-                                                         "password",
-                                                         "password",
+                                                         NULL, NULL,
                                                          NULL,
-                                                         G_PARAM_STATIC_STRINGS |
-                                                         G_PARAM_READWRITE));
+                                                         G_PARAM_READWRITE | G_PARAM_STATIC_NAME));
 }
 
 /**
@@ -490,9 +472,8 @@ void spice_uri_set_user(SpiceURI *self, const gchar *user)
 {
     g_return_if_fail(SPICE_IS_URI(self));
 
-    g_free(self->user);
-    self->user = g_strdup(user);
-    g_object_notify((GObject *)self, "user");
+    if (g_set_str(&self->user, user))
+        g_object_notify((GObject *)self, "user");
 }
 
 /**
@@ -522,7 +503,6 @@ void spice_uri_set_password(SpiceURI *self, const gchar *password)
 {
     g_return_if_fail(SPICE_IS_URI(self));
 
-    g_free(self->password);
-    self->password = g_strdup(password);
-    g_object_notify((GObject *)self, "password");
+    if (g_set_str(&self->password, password))
+        g_object_notify((GObject *)self, "password");
 }

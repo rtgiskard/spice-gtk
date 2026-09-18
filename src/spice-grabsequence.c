@@ -77,7 +77,7 @@ SpiceGrabSequence *spice_grab_sequence_new(guint nkeysyms, guint *keysyms)
  **/
 SpiceGrabSequence *spice_grab_sequence_new_from_string(const gchar *str)
 {
-	gchar **keysymstr;
+	g_auto(GStrv) keysymstr = NULL;
 	int i;
 	SpiceGrabSequence *sequence;
 
@@ -97,7 +97,6 @@ SpiceGrabSequence *spice_grab_sequence_new_from_string(const gchar *str)
                         g_critical("Invalid key: %s", keysymstr[i]);
                 }
         }
-	g_strfreev(keysymstr);
 
 	return sequence;
 
@@ -158,7 +157,7 @@ gchar *spice_grab_sequence_as_string(SpiceGrabSequence *sequence)
 		g_string_append(str, gdk_keyval_name(sequence->keysyms[i]));
 	}
 
-	return g_string_free(str, FALSE);
+	return g_string_free_and_steal(str);
 
 }
 

@@ -241,10 +241,7 @@ static LRESULT CALLBACK subclass_proc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 
 static void disable_hotplug_support(SpiceUsbBackend *be)
 {
-    if (be->hWnd) {
-        DestroyWindow(be->hWnd);
-        be->hWnd = NULL;
-    }
+    g_clear_pointer(&be->hWnd, DestroyWindow);
     if (be->libusb_device_list) {
         libusb_free_device_list(be->libusb_device_list, TRUE);
         be->libusb_device_list = NULL;
@@ -343,10 +340,9 @@ static void *usbredir_alloc_lock(void)
 
 static void usbredir_free_lock(void *user_data)
 {
-    GMutex *mutex = user_data;
+    g_autofree GMutex *mutex = user_data;
 
     g_mutex_clear(mutex);
-    g_free(mutex);
 }
 
 static void usbredir_lock_lock(void *user_data)
@@ -450,8 +446,7 @@ SpiceUsbBackend *spice_usb_backend_new(GError **error)
         g_warning("Error initializing LIBUSB support: %s [%i]", desc, rc);
         g_set_error(error, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
             "Error initializing LIBUSB support: %s [%i]", desc, rc);
-        g_free(be);
-        be = NULL;
+        g_clear_pointer(&be, g_free);
     } else {
 #ifdef G_OS_WIN32
 #if LIBUSB_API_VERSION >= 0x01000106
@@ -497,8 +492,7 @@ void spice_usb_backend_deregister_hotplug(SpiceUsbBackend *be)
     g_atomic_int_set(&be->event_thread_run, FALSE);
     if (be->event_thread) {
         libusb_interrupt_event_handler(be->libusb_context);
-        g_thread_join(be->event_thread);
-        be->event_thread = NULL;
+        g_clear_pointer(&be->event_thread, g_thread_join);
     }
 }
 
@@ -1340,8 +1334,7 @@ spice_usb_backend_channel_new(SpiceUsbBackend *be,
     }
 
     if (!ch->parser) {
-        spice_usb_backend_channel_delete(ch);
-        ch = NULL;
+        g_clear_pointer(&ch, spice_usb_backend_channel_delete);
     }
 
     SPICE_DEBUG("%s << %p", __FUNCTION__, ch);
@@ -1449,12 +1442,11 @@ gchar *spice_usb_backend_device_get_description(SpiceUsbDevice *dev,
 void spice_usb_backend_device_report_change(SpiceUsbBackend *be,
                                             SpiceUsbDevice *dev)
 {
-    gchar *desc;
+    g_autofree gchar *desc = NULL;
     g_return_if_fail(dev && dev->edev);
 
     desc = device_ops(dev->edev)->get_product_description(dev->edev);
     SPICE_DEBUG("%s: %s", __FUNCTION__, desc);
-    g_free(desc);
 }
 
 void spice_usb_backend_device_eject(SpiceUsbBackend *be, SpiceUsbDevice *dev)
@@ -1476,7 +1468,7 @@ spice_usb_backend_create_emulated_device(SpiceUsbBackend *be,
                                          GError **err)
 {
     SpiceUsbEmulatedDevice *edev;
-    SpiceUsbDevice *dev;
+    g_autoptr(SpiceUsbDevice) dev = NULL;
     struct libusb_device_descriptor *desc;
     uint16_t device_desc_size;
     uint8_t address = 0;
@@ -1502,7 +1494,6 @@ spice_usb_backend_create_emulated_device(SpiceUsbBackend *be,
 
     dev->edev = edev = create_proc(be, dev, create_params, err);
     if (edev == NULL) {
-        spice_usb_backend_device_unref(dev);
         return FALSE;
     }
 
@@ -1510,7 +1501,6 @@ spice_usb_backend_create_emulated_device(SpiceUsbBackend *be,
                                           (void **)&desc, &device_desc_size)
         || device_desc_size != sizeof(*desc)) {
 
-        spice_usb_backend_device_unref(dev);
         g_set_error(err, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
                     _("can't create device - internal error"));
         return FALSE;
@@ -1528,7 +1518,6 @@ spice_usb_backend_create_emulated_device(SpiceUsbBackend *be,
     if (be->hotplug_callback) {
         be->hotplug_callback(be->hotplug_user_data, dev, TRUE);
     }
-    spice_usb_backend_device_unref(dev);
 
     return TRUE;
 }

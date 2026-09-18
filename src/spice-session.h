@@ -125,4 +125,5 @@ SpiceURI *spice_session_get_proxy_uri(SpiceSession *session);
 SPICE_GTK_AVAILABLE_IN_0_27
 gboolean spice_session_is_for_migration(SpiceSession *session);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceSession, g_object_unref)
 G_END_DECLS

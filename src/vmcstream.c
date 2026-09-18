@@ -102,17 +102,14 @@ typedef struct _complete_in_idle_cb_data {
     gssize pos;
 } complete_in_idle_cb_data;
 
-static gboolean
+static void
 complete_in_idle_cb(gpointer user_data)
 {
-    complete_in_idle_cb_data *data = user_data;
+    g_autofree complete_in_idle_cb_data *data = user_data;
 
     g_task_return_int(data->task, data->pos);
 
     g_object_unref (data->task);
-    g_free (data);
-
-    return FALSE;
 }
 
 /* coroutine */
@@ -162,7 +159,7 @@ spice_vmc_input_stream_co_data(SpiceVmcInputStream *self,
         cb_data = g_new(complete_in_idle_cb_data , 1);
         cb_data->task = g_object_ref(self->task);
         cb_data->pos = self->pos;
-        G_GNUC_UNUSED guint idle_id = g_idle_add(complete_in_idle_cb, cb_data);
+        G_GNUC_UNUSED guint idle_id = g_idle_add_once(complete_in_idle_cb, cb_data);
 
         g_clear_object(&self->task);
     }
@@ -197,7 +194,6 @@ spice_vmc_input_stream_read_all_async(GInputStream        *stream,
                                       gpointer             user_data)
 {
     SpiceVmcInputStream *self = SPICE_VMC_INPUT_STREAM(stream);
-    GTask *task;
 
     /* no concurrent read permitted by ginputstream */
     g_return_if_fail(self->task == NULL);
@@ -205,16 +201,16 @@ spice_vmc_input_stream_read_all_async(GInputStream        *stream,
     self->buffer = buffer;
     self->count = count;
     self->pos = 0;
-    task = g_task_new(self,
-                      cancellable,
-                      callback,
-                      user_data);
+    g_autoptr(GTask) task = g_task_new(self,
+                                       cancellable,
+                                       callback,
+                                       user_data);
+    g_task_set_source_tag(task, spice_vmc_input_stream_read_all_async);
     if (count == 0) {
         g_task_return_int(task, 0);
-        g_object_unref(task);
         return;
     }
-    self->task = task;
+    self->task = g_steal_pointer(&task);
     if (cancellable)
         self->cancel_id =
             g_cancellable_connect(cancellable, G_CALLBACK(read_cancelled), self, NULL);
@@ -261,6 +257,7 @@ spice_vmc_input_stream_read_async(GInputStream        *stream,
     self->pos = 0;
 
     task = g_task_new(self, cancellable, callback, user_data);
+    g_task_set_source_tag(task, spice_vmc_input_stream_read_async);
     self->task = task;
     if (cancellable)
         self->cancel_id =
@@ -439,6 +436,7 @@ spice_vmc_output_stream_write_async(GOutputStream *stream,
     SPICE_DEBUG("spicevmc write async");
     /* an AsyncResult to forward async op to channel */
     task = g_task_new(self, cancellable, callback, user_data);
+    g_task_set_source_tag(task, spice_vmc_output_stream_write_async);
 
     spice_vmc_write_async(self->channel, buffer, count,
                           cancellable, write_cb,

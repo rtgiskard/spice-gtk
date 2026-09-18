@@ -82,12 +82,14 @@
  * save to disk).
  */
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(cairo_t, cairo_destroy)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(cairo_surface_t, cairo_surface_destroy)
+
 G_DEFINE_TYPE_WITH_PRIVATE(SpiceDisplay, spice_display, GTK_TYPE_EVENT_BOX)
 
 /* Properties */
-enum {
-    PROP_0,
-    PROP_SESSION,
+typedef enum {
+    PROP_SESSION = 1,
     PROP_CHANNEL_ID,
     PROP_KEYBOARD_GRAB,
     PROP_MOUSE_GRAB,
@@ -98,8 +100,10 @@ enum {
     PROP_ZOOM_LEVEL,
     PROP_MONITOR_ID,
     PROP_KEYPRESS_DELAY,
-    PROP_READY
-};
+    PROP_READY,
+} SpiceDisplayProps;
+
+static GParamSpec *props[PROP_READY + 1] = { NULL, };
 
 /* Signals */
 enum {
@@ -148,7 +152,7 @@ static void spice_display_get_property(GObject    *object,
     SpiceDisplay *display = SPICE_DISPLAY(object);
     SpiceDisplayPrivate *d = display->priv;
 
-    switch (prop_id) {
+    switch ((SpiceDisplayProps) prop_id) {
     case PROP_SESSION:
         g_value_set_object(value, d->session);
         break;
@@ -184,9 +188,6 @@ static void spice_display_get_property(GObject    *object,
         break;
     case PROP_KEYPRESS_DELAY:
         g_value_set_uint(value, d->keypress_delay);
-        break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
         break;
     }
 }
@@ -317,7 +318,7 @@ static void update_ready(SpiceDisplay *display)
         gtk_widget_queue_draw(GTK_WIDGET(display));
 
     d->ready = ready;
-    g_object_notify(G_OBJECT(display), "ready");
+    g_object_notify_by_pspec(G_OBJECT(display), props[PROP_READY]);
 }
 
 static void set_monitor_ready(SpiceDisplay *self, gboolean ready)
@@ -394,7 +395,7 @@ spice_display_set_keypress_delay(SpiceDisplay *display, guint delay)
     if (d->keypress_delay != delay) {
         DISPLAY_DEBUG(display, "keypress-delay is set to %u ms", delay);
         d->keypress_delay = delay;
-        g_object_notify(G_OBJECT(display), "keypress-delay");
+        g_object_notify_by_pspec(G_OBJECT(display), props[PROP_KEYPRESS_DELAY]);
     }
 }
 
@@ -406,7 +407,7 @@ static void spice_display_set_property(GObject      *object,
     SpiceDisplay *display = SPICE_DISPLAY(object);
     SpiceDisplayPrivate *d = display->priv;
 
-    switch (prop_id) {
+    switch ((SpiceDisplayProps) prop_id) {
     case PROP_SESSION:
         g_warn_if_fail(d->session == NULL);
         d->session = g_value_dup_object(value);
@@ -457,8 +458,8 @@ static void spice_display_set_property(GObject      *object,
     case PROP_KEYPRESS_DELAY:
         spice_display_set_keypress_delay(display, g_value_get_uint(value));
         break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+    case PROP_READY:
+        g_assert_not_reached();
         break;
     }
 }
@@ -487,10 +488,7 @@ static void spice_display_dispose(GObject *obj)
     g_clear_object(&d->session);
     d->gtk_session = NULL;
 
-    if (d->key_delayed_id) {
-        g_source_remove(d->key_delayed_id);
-        d->key_delayed_id = 0;
-    }
+    g_clear_handle_id(&d->key_delayed_id, g_source_remove);
 
     G_OBJECT_CLASS(spice_display_parent_class)->dispose(obj);
 }
@@ -592,11 +590,11 @@ static void drag_data_received_callback(SpiceDisplay *self,
                                         gpointer *user_data)
 {
     const guchar *buf;
-    gchar **file_urls;
+    g_auto(GStrv) file_urls = NULL;
     int n_files;
     SpiceDisplayPrivate *d = self->priv;
     int i = 0;
-    GFile **files;
+    g_autofree GFile **files = NULL;
 
     /* We get a buf like:
      * file:///root/a.txt\r\nfile:///root/b.txt\r\n
@@ -611,14 +609,12 @@ static void drag_data_received_callback(SpiceDisplay *self,
     for (i = 0; i < n_files; i++) {
         files[i] = g_file_new_for_uri(file_urls[i]);
     }
-    g_strfreev(file_urls);
 
     spice_main_channel_file_copy_async(d->main, files, 0, NULL, NULL, NULL, file_transfer_callback,
                                        NULL);
     for (i = 0; i < n_files; i++) {
         g_object_unref(files[i]);
     }
-    g_free(files);
 
     gtk_drag_finish(drag_context, TRUE, FALSE, time);
 }
@@ -1015,10 +1011,7 @@ static void try_keyboard_ungrab(SpiceDisplay *display)
     ungrab_keyboard(display);
 #ifdef G_OS_WIN32
     // do not use g_clear_pointer as Windows API have different linkage
-    if (d->keyboard_hook) {
-        UnhookWindowsHookEx(d->keyboard_hook);
-        d->keyboard_hook = NULL;
-    }
+    g_clear_pointer(&d->keyboard_hook, UnhookWindowsHookEx);
 #endif
     d->keyboard_grab_active = false;
     g_signal_emit(widget, signals[SPICE_DISPLAY_KEYBOARD_GRAB], 0, false);
@@ -1576,10 +1569,7 @@ static void key_press_and_release(SpiceDisplay *display)
     spice_inputs_channel_key_press_and_release(d->inputs, d->key_delayed_scancode);
     d->key_delayed_scancode = 0;
 
-    if (d->key_delayed_id) {
-        g_source_remove(d->key_delayed_id);
-        d->key_delayed_id = 0;
-    }
+    g_clear_handle_id(&d->key_delayed_id, g_source_remove);
 }
 
 static gboolean key_press_delayed(gpointer data)
@@ -1593,10 +1583,7 @@ static gboolean key_press_delayed(gpointer data)
     spice_inputs_channel_key_press(d->inputs, d->key_delayed_scancode);
     d->key_delayed_scancode = 0;
 
-    if (d->key_delayed_id) {
-        g_source_remove(d->key_delayed_id);
-        d->key_delayed_id = 0;
-    }
+    g_clear_handle_id(&d->key_delayed_id, g_source_remove);
 
     return G_SOURCE_REMOVE;
 }
@@ -1936,14 +1923,13 @@ static guint get_scancode_from_keyval(SpiceDisplay *display, guint keyval)
 {
     SpiceDisplayPrivate *d = display->priv;
     guint keycode = 0;
-    GdkKeymapKey *keys = NULL;
+    g_autofree GdkKeymapKey *keys = NULL;
     gint n_keys = 0;
     GdkKeymap *keymap = gdk_keymap_get_for_display(gdk_display_get_default());
 
     if (gdk_keymap_get_entries_for_keyval(keymap, keyval, &keys, &n_keys)) {
         /* FIXME what about levels? */
         keycode = keys[0].keycode;
-        g_free(keys);
     } else {
         g_warning("could not lookup keyval %u, please report a bug", keyval);
         return 0;
@@ -2441,14 +2427,10 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
      * #SpiceSession for this #SpiceDisplay
      *
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_SESSION,
-         g_param_spec_object("session",
-                             "Session",
-                             "SpiceSession",
-                             SPICE_TYPE_SESSION,
-                             G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                             G_PARAM_STATIC_STRINGS));
+    props[PROP_SESSION] = g_param_spec_object("session",
+                                              NULL, NULL,
+                                              SPICE_TYPE_SESSION,
+                                              G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceDisplay:channel-id:
@@ -2456,45 +2438,25 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
      * channel-id for this #SpiceDisplay
      *
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_CHANNEL_ID,
-         g_param_spec_int("channel-id",
-                          "Channel ID",
-                          "Channel ID for this display",
-                          0, 255, 0,
-                          G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                          G_PARAM_STATIC_STRINGS));
+    props[PROP_CHANNEL_ID] = g_param_spec_int("channel-id",
+                                              NULL, NULL,
+                                              0, 255, 0,
+                                              G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
-    g_object_class_install_property
-        (gobject_class, PROP_KEYBOARD_GRAB,
-         g_param_spec_boolean("grab-keyboard",
-                              "Grab Keyboard",
-                              "Whether we should grab the keyboard.",
-                              TRUE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_CONSTRUCT |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_KEYBOARD_GRAB] = g_param_spec_boolean("grab-keyboard",
+                                                     NULL, NULL,
+                                                     TRUE,
+                                                     G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
-    g_object_class_install_property
-        (gobject_class, PROP_MOUSE_GRAB,
-         g_param_spec_boolean("grab-mouse",
-                              "Grab Mouse",
-                              "Whether we should grab the mouse.",
-                              TRUE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_CONSTRUCT |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_MOUSE_GRAB] = g_param_spec_boolean("grab-mouse",
+                                                  NULL, NULL,
+                                                  TRUE,
+                                                  G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
-    g_object_class_install_property
-        (gobject_class, PROP_RESIZE_GUEST,
-         g_param_spec_boolean("resize-guest",
-                              "Resize guest",
-                              "Try to adapt guest display on window resize. "
-                              "Requires guest cooperation.",
-                              FALSE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_CONSTRUCT |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_RESIZE_GUEST] = g_param_spec_boolean("resize-guest",
+                                                    NULL, NULL,
+                                                    FALSE,
+                                                    G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceDisplay:ready:
@@ -2505,23 +2467,14 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
      *
      * Since: 0.13
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_READY,
-         g_param_spec_boolean("ready",
-                              "Ready",
-                              "Ready to display",
-                              FALSE,
-                              G_PARAM_READABLE |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_READY] = g_param_spec_boolean("ready",
+                                             NULL, NULL,
+                                             FALSE,
+                                             G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
-    g_object_class_install_property
-        (gobject_class, PROP_SCALING,
-         g_param_spec_boolean("scaling", "Scaling",
-                              "Whether we should use scaling",
-                              TRUE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_CONSTRUCT |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_SCALING] = g_param_spec_boolean("scaling", NULL, NULL,
+                                               TRUE,
+                                               G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceDisplay:only-downscale:
@@ -2530,14 +2483,9 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
      *
      * Since: 0.14
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_ONLY_DOWNSCALE,
-         g_param_spec_boolean("only-downscale", "Only Downscale",
-                              "If scaling, only scale down, never up",
-                              FALSE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_CONSTRUCT |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_ONLY_DOWNSCALE] = g_param_spec_boolean("only-downscale", NULL, NULL,
+                                                      FALSE,
+                                                      G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceDisplay:keypress-delay:
@@ -2550,14 +2498,9 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
      *
      * Since: 0.13
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_KEYPRESS_DELAY,
-         g_param_spec_uint("keypress-delay", "Keypress delay",
-                           "Keypress delay",
-                           0, G_MAXUINT, DEFAULT_KEYPRESS_DELAY,
-                           G_PARAM_READWRITE |
-                           G_PARAM_CONSTRUCT |
-                           G_PARAM_STATIC_STRINGS));
+    props[PROP_KEYPRESS_DELAY] = g_param_spec_uint("keypress-delay", NULL, NULL,
+                                                   0, G_MAXUINT, DEFAULT_KEYPRESS_DELAY,
+                                                   G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceDisplay:disable-inputs:
@@ -2566,14 +2509,9 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
      *
      * Since: 0.8
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_DISABLE_INPUTS,
-         g_param_spec_boolean("disable-inputs", "Disable inputs",
-                              "Whether inputs should be disabled",
-                              FALSE,
-                              G_PARAM_READWRITE |
-                              G_PARAM_CONSTRUCT |
-                              G_PARAM_STATIC_STRINGS));
+    props[PROP_DISABLE_INPUTS] = g_param_spec_boolean("disable-inputs", NULL, NULL,
+                                                      FALSE,
+                                                      G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
 
     /**
@@ -2585,14 +2523,9 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
      *
      * Since: 0.10
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_ZOOM_LEVEL,
-         g_param_spec_int("zoom-level", "Zoom Level",
-                          "Zoom Level",
-                          10, 400, 100,
-                          G_PARAM_READWRITE |
-                          G_PARAM_CONSTRUCT |
-                          G_PARAM_STATIC_STRINGS));
+    props[PROP_ZOOM_LEVEL] = g_param_spec_int("zoom-level", NULL, NULL,
+                                              10, 400, 100,
+                                              G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceDisplay:monitor-id:
@@ -2603,15 +2536,12 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
      *
      * Since: 0.13
      **/
-    g_object_class_install_property
-        (gobject_class, PROP_MONITOR_ID,
-         g_param_spec_int("monitor-id",
-                          "Monitor ID",
-                          "Select monitor ID",
-                          -1, G_MAXINT, 0,
-                          G_PARAM_READWRITE |
-                          G_PARAM_CONSTRUCT |
-                          G_PARAM_STATIC_STRINGS));
+    props[PROP_MONITOR_ID] = g_param_spec_int("monitor-id",
+                                              NULL, NULL,
+                                              -1, G_MAXINT, 0,
+                                              G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
+
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 
     /**
      * SpiceDisplay::mouse-grab:
@@ -2897,11 +2827,10 @@ static void gst_sync_bus_call(GstBus *bus, GstMessage *msg, SpiceDisplay *displa
 
 #if defined(HAVE_LIBVA)
         if (g_strcmp0(context_type, "gst.vaapi.app.Display") == 0) {
-            GstContext *context = create_vaapi_context();
+            g_autoptr(GstContext) context = create_vaapi_context();
 
             if (context) {
                 gst_element_set_context(GST_ELEMENT(msg->src), context);
-                gst_context_unref(context);
             }
         }
 #endif
@@ -2922,8 +2851,8 @@ static gboolean gst_draw_event(GtkWidget *widget, cairo_t *cr, gpointer data)
 
     if (overlay) {
         gst_video_overlay_expose(overlay);
-        gst_object_unref(overlay);
         update_mouse_pointer(display);
+        g_object_unref(overlay);
         return true;
     }
     return false;
@@ -2940,7 +2869,7 @@ static void gst_size_allocate(GtkWidget *widget, GdkRectangle *a, gpointer data)
 
         gst_video_overlay_set_render_rectangle(overlay, a->x * scale, a->y * scale,
                                                a->width * scale, a->height * scale);
-        gst_object_unref(overlay);
+        g_object_unref(overlay);
     }
 }
 
@@ -2966,13 +2895,12 @@ static gboolean set_overlay(SpiceChannel *channel, void* pipeline_ptr, SpiceDisp
 
         window = gtk_widget_get_window(GTK_WIDGET(display));
         if (window && gdk_window_ensure_native(window)) {
-            GstBus *bus;
+            g_autoptr(GstBus) bus = NULL;
 
             gtk_stack_set_visible_child_name(d->stack, "gst-area");
             bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline_ptr));
             gst_bus_enable_sync_message_emission(bus);
             g_signal_connect(bus, "sync-message", G_CALLBACK(gst_sync_bus_call), display);
-            gst_object_unref(bus);
             return true;
         }
     }
@@ -3085,8 +3013,8 @@ static void update_mouse_cursor(SpiceDisplay *display)
 {
     SpiceDisplayPrivate *d = display->priv;
     GdkCursor *cursor = NULL;
-    cairo_t *cursor_ctx;
-    cairo_surface_t *surface, *target;
+    g_autoptr(cairo_t) cursor_ctx = NULL;
+    g_autoptr(cairo_surface_t) surface = NULL;
     double scale;
     gint scale_factor;
     gint hotspot_x, hotspot_y;
@@ -3113,7 +3041,7 @@ static void update_mouse_cursor(SpiceDisplay *display)
 
     /* scale mouse cursor surface */
     surface = gdk_cairo_surface_create_from_pixbuf(d->mouse_pixbuf, 0, gtk_widget_get_window(GTK_WIDGET(display)));
-    target = cairo_image_surface_create(cairo_image_surface_get_format(surface),
+    g_autoptr(cairo_surface_t) target = cairo_image_surface_create(cairo_image_surface_get_format(surface),
                                         scale * gdk_pixbuf_get_width(d->mouse_pixbuf),
                                         scale * gdk_pixbuf_get_height(d->mouse_pixbuf));
 
@@ -3126,10 +3054,6 @@ static void update_mouse_cursor(SpiceDisplay *display)
     cairo_paint(cursor_ctx);
 
     d->cursor_surface = cairo_surface_reference(cairo_get_target(cursor_ctx));
-
-    cairo_surface_destroy(target);
-    cairo_surface_destroy(surface);
-    cairo_destroy(cursor_ctx);
 
     hotspot_x = d->mouse_hotspot.x * scale;
     hotspot_y = d->mouse_hotspot.y * scale;
@@ -3321,7 +3245,7 @@ static void inputs_channel_event(SpiceChannel *channel, SpiceChannelEvent event,
 {
     SpiceDisplay *display = data;
     guint delay = DEFAULT_KEYPRESS_DELAY;
-    GSocket *sock;
+    g_autoptr(GSocket) sock = NULL;
 
     if (event != SPICE_CHANNEL_OPENED)
         return;
@@ -3330,7 +3254,6 @@ static void inputs_channel_event(SpiceChannel *channel, SpiceChannelEvent event,
     if (g_socket_get_family(sock) == G_SOCKET_FAMILY_UNIX) {
         delay = 0;
     }
-    g_object_unref(sock);
 
     spice_display_set_keypress_delay(display, delay);
 }

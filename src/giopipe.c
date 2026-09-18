@@ -179,15 +179,13 @@ pipe_input_stream_close_async (GInputStream       *stream,
                                GAsyncReadyCallback  callback,
                                gpointer             data)
 {
-    GTask *task;
-
-    task = g_task_new (stream, cancellable, callback, data);
+    g_autoptr(GTask) task = g_task_new (stream, cancellable, callback, data);
+    g_task_set_source_tag(task, pipe_input_stream_close_async);
 
     /* will always return TRUE */
     pipe_input_stream_close (stream, cancellable, NULL);
 
     g_task_return_boolean (task, TRUE);
-    g_object_unref (task);
 }
 
 static gboolean
@@ -213,13 +211,9 @@ pipe_input_stream_dispose(GObject *object)
 
     self = PIPE_INPUT_STREAM(object);
 
-    if (self->peer) {
-        g_object_remove_weak_pointer(G_OBJECT(self->peer), (gpointer*)&self->peer);
-        self->peer = NULL;
-    }
+    g_clear_weak_pointer(&self->peer);
 
-    g_list_free_full (self->sources, (GDestroyNotify) g_source_unref);
-    self->sources = NULL;
+    g_clear_list(&self->sources, (GDestroyNotify) g_source_unref);
 
     G_OBJECT_CLASS(pipe_input_stream_parent_class)->dispose (object);
 }
@@ -333,13 +327,9 @@ pipe_output_stream_dispose(GObject *object)
 
     self = PIPE_OUTPUT_STREAM(object);
 
-    if (self->peer) {
-        g_object_remove_weak_pointer(G_OBJECT(self->peer), (gpointer*)&self->peer);
-        self->peer = NULL;
-    }
+    g_clear_weak_pointer(&self->peer);
 
-    g_list_free_full (self->sources, (GDestroyNotify) g_source_unref);
-    self->sources = NULL;
+    g_clear_list(&self->sources, (GDestroyNotify) g_source_unref);
 
     G_OBJECT_CLASS(pipe_output_stream_parent_class)->dispose (object);
 }
@@ -377,15 +367,13 @@ pipe_output_stream_close_async (GOutputStream       *stream,
                                 GAsyncReadyCallback  callback,
                                 gpointer             data)
 {
-    GTask *task;
-
-    task = g_task_new (stream, cancellable, callback, data);
+    g_autoptr(GTask) task = g_task_new (stream, cancellable, callback, data);
+    g_task_set_source_tag(task, pipe_output_stream_close_async);
 
     /* will always return TRUE */
     pipe_output_stream_close (stream, cancellable, NULL);
 
     g_task_return_boolean (task, TRUE);
-    g_object_unref (task);
 }
 
 static gboolean

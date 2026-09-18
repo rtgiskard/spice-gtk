@@ -23,6 +23,8 @@
 #include "spice-gtk-session-priv.h"
 
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(cairo_region_t, cairo_region_destroy)
+
 G_GNUC_INTERNAL
 int spice_cairo_image_create(SpiceDisplay *display)
 {
@@ -71,7 +73,6 @@ void spice_cairo_draw_event(SpiceDisplay *display, cairo_t *cr)
 {
     SpiceDisplayPrivate *d = display->priv;
     cairo_rectangle_int_t rect;
-    cairo_region_t *region;
     double s;
     int x, y;
     int ww, wh;
@@ -95,7 +96,7 @@ void spice_cairo_draw_event(SpiceDisplay *display, cairo_t *cr)
     rect.y = 0;
     rect.width = ww;
     rect.height = wh;
-    region = cairo_region_create_rectangle(&rect);
+    g_autoptr(cairo_region_t) region = cairo_region_create_rectangle(&rect);
 
     /* Optionally cut out the inner area where the pixmap
        will be drawn. This avoids 'flashing' since we're
@@ -109,7 +110,6 @@ void spice_cairo_draw_event(SpiceDisplay *display, cairo_t *cr)
     }
 
     gdk_cairo_region (cr, region);
-    cairo_region_destroy (region);
 
     /* Need to set a real solid color, because the default is usually
        transparent these days, and non-double buffered windows can't

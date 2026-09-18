@@ -108,4 +108,5 @@ SPICE_GTK_DEPRECATED_IN_0_8_FOR(spice_audio_get)
 SpiceAudio* spice_audio_new(SpiceSession *session, GMainContext *context, const char *name);
 #endif
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceAudio, g_object_unref)
 G_END_DECLS

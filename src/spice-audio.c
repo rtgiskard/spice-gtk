@@ -46,11 +46,12 @@ G_STATIC_ASSERT(sizeof(SpiceAudioClass) == sizeof(GObjectClass) + 11 * sizeof(gp
 
 G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE(SpiceAudio, spice_audio, G_TYPE_OBJECT)
 
-enum {
-    PROP_0,
-    PROP_SESSION,
+typedef enum {
+    PROP_SESSION = 1,
     PROP_MAIN_CONTEXT,
-};
+} SpiceAudioProps;
+
+static GParamSpec *props[PROP_MAIN_CONTEXT + 1] = { NULL, };
 
 static void spice_audio_finalize(GObject *gobject)
 {
@@ -71,15 +72,12 @@ static void spice_audio_get_property(GObject *gobject,
     SpiceAudio *self = SPICE_AUDIO(gobject);
     SpiceAudioPrivate *priv = self->priv;
 
-    switch (prop_id) {
+    switch ((SpiceAudioProps) prop_id) {
     case PROP_SESSION:
         g_value_set_object(value, priv->session);
         break;
     case PROP_MAIN_CONTEXT:
         g_value_set_boxed(value, priv->main_context);
-        break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
         break;
     }
 }
@@ -92,15 +90,12 @@ static void spice_audio_set_property(GObject *gobject,
     SpiceAudio *self = SPICE_AUDIO(gobject);
     SpiceAudioPrivate *priv = self->priv;
 
-    switch (prop_id) {
+    switch ((SpiceAudioProps) prop_id) {
     case PROP_SESSION:
         priv->session = g_value_get_object(value);
         break;
     case PROP_MAIN_CONTEXT:
         priv->main_context = g_value_dup_boxed(value);
-        break;
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, pspec);
         break;
     }
 }
@@ -108,7 +103,6 @@ static void spice_audio_set_property(GObject *gobject,
 static void spice_audio_class_init(SpiceAudioClass *klass)
 {
     GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
-    GParamSpec *pspec;
 
     gobject_class->finalize     = spice_audio_finalize;
     gobject_class->get_property = spice_audio_get_property;
@@ -120,19 +114,18 @@ static void spice_audio_class_init(SpiceAudioClass *klass)
      * #SpiceSession this #SpiceAudio is associated with
      *
      **/
-    pspec = g_param_spec_object("session", "Session", "SpiceSession",
-                                SPICE_TYPE_SESSION,
-                                G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
-    g_object_class_install_property(gobject_class, PROP_SESSION, pspec);
+    props[PROP_SESSION] = g_param_spec_object("session", NULL, NULL,
+                                              SPICE_TYPE_SESSION,
+                                              G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceAudio:main-context:
      */
-    pspec = g_param_spec_boxed("main-context", "Main Context",
-                               "GMainContext to use for the event source",
-                               G_TYPE_MAIN_CONTEXT,
-                               G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
-    g_object_class_install_property(gobject_class, PROP_MAIN_CONTEXT, pspec);
+    props[PROP_MAIN_CONTEXT] = g_param_spec_boxed("main-context", NULL, NULL,
+                                                  G_TYPE_MAIN_CONTEXT,
+                                                  G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
+
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
 }
 
 static void spice_audio_init(SpiceAudio *self)

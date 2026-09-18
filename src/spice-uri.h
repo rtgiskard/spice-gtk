@@ -73,4 +73,5 @@ const gchar* spice_uri_get_password(SpiceURI* uri);
 SPICE_GTK_AVAILABLE_IN_0_24
 void spice_uri_set_password(SpiceURI* uri, const gchar* password);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceURI, g_object_unref)
 G_END_DECLS

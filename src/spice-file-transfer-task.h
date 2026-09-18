@@ -52,4 +52,5 @@ guint64 spice_file_transfer_task_get_transferred_bytes(SpiceFileTransferTask *se
 SPICE_GTK_AVAILABLE_IN_0_31
 double spice_file_transfer_task_get_progress(SpiceFileTransferTask *self);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceFileTransferTask, g_object_unref)
 G_END_DECLS

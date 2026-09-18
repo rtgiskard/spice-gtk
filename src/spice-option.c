@@ -91,7 +91,7 @@ static gboolean parse_secure_channels(const gchar *option_name, const gchar *val
                                       gpointer data, GError **error)
 {
     gint i;
-    gchar **channels = g_strsplit(value, ",", -1);
+    g_auto(GStrv) channels = g_strsplit(value, ",", -1);
 
     g_return_val_if_fail(channels != NULL, FALSE);
 
@@ -100,16 +100,13 @@ static gboolean parse_secure_channels(const gchar *option_name, const gchar *val
             continue;
 
         if (spice_channel_string_to_type(channels[i]) == -1) {
-            gchar *supported = spice_channel_supported_string();
+            g_autofree gchar *supported = spice_channel_supported_string();
             g_set_error(error, G_OPTION_ERROR, G_OPTION_ERROR_FAILED,
                         _("invalid channel name (%s), valid names: all, %s"),
                         channels[i], supported);
-            g_free(supported);
             return FALSE;
         }
     }
-
-    g_strfreev(channels);
 
     secure_channels = g_strdup(value);
 
@@ -218,11 +215,10 @@ GOptionGroup* spice_get_option_group(void)
 static SpiceUsbDeviceManager *
 get_usb_device_manager_for_option(SpiceSession *session, const char *option)
 {
-    GError *err = NULL;
+    g_autoptr(GError) err = NULL;
     SpiceUsbDeviceManager *m = spice_usb_device_manager_get(session, &err);
     if (!m) {
         g_warning("Option %s is set but failed: %s", option, err->message);
-        g_error_free(err);
     }
     return m;
 }
@@ -252,11 +248,9 @@ void spice_set_session_option(SpiceSession *session)
     }
 
     if (secure_channels) {
-        GStrv channels;
-        channels = g_strsplit(secure_channels, ",", -1);
+        g_auto(GStrv) channels = g_strsplit(secure_channels, ",", -1);
         if (channels)
             g_object_set(session, "secure-channels", channels, NULL);
-        g_strfreev(channels);
     }
 
     if (ca_file)
@@ -266,11 +260,9 @@ void spice_set_session_option(SpiceSession *session)
     if (smartcard) {
         g_object_set(session, "enable-smartcard", smartcard, NULL);
         if (smartcard_certificates) {
-            GStrv certs_strv;
-            certs_strv = g_strsplit(smartcard_certificates, ",", -1);
+            g_auto(GStrv) certs_strv = g_strsplit(smartcard_certificates, ",", -1);
             if (certs_strv)
                 g_object_set(session, "smartcard-certificates", certs_strv, NULL);
-            g_strfreev(certs_strv);
         }
         if (smartcard_db)
             g_object_set(session, "smartcard-db", smartcard_db, NULL);
@@ -313,8 +305,7 @@ void spice_set_session_option(SpiceSession *session)
                 name++;
             }
         }
-        g_strfreev(cd_share_files);
-        cd_share_files = NULL;
+        g_clear_pointer(&cd_share_files, g_strfreev);
     }
     if (disable_usbredir)
         g_object_set(session, "enable-usbredir", FALSE, NULL);

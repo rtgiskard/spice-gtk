@@ -60,12 +60,10 @@ struct _SpiceQmpPortClass
     GObjectClass parent_class;
 };
 
-enum {
+typedef enum {
     PROP_CHANNEL = 1,
     PROP_READY,
-
-    PROP_LAST,
-};
+} SpiceQmpPortProps;
 
 enum {
     SIGNAL_EVENT,
@@ -74,7 +72,7 @@ enum {
 };
 
 static guint signals[SIGNAL_LAST];
-static GParamSpec *props[PROP_LAST] = { NULL, };
+static GParamSpec *props[PROP_READY + 1] = { NULL, };
 
 G_DEFINE_TYPE_WITH_PRIVATE(SpiceQmpPort, spice_qmp_port, G_TYPE_OBJECT)
 
@@ -120,7 +118,7 @@ spice_qmp_dispatch_message(SpiceQmpPort *self)
         SPICE_DEBUG("QMP return id:%d", id);
         if (!self->priv->ready && id == 0) {
             self->priv->ready = TRUE;
-            g_object_notify(G_OBJECT(self), "ready");
+            g_object_notify_by_pspec (G_OBJECT(self), props[PROP_READY]);
         }
 
         g_warn_if_fail(self->priv->ready);
@@ -160,13 +158,12 @@ spice_qmp_handle_port_data(SpiceQmpPort *self, gpointer data,
 
     str = qmp->str;
     while ((crlf = strstr(str, "\r\n")) != NULL) {
-        GError *err = NULL;
+        g_autoptr(GError) err = NULL;
 
         *crlf = '\0';
         json_parser_load_from_data(self->priv->qmp_parser, str, crlf - str, &err);
         if (err) {
             g_warning("JSON parsing error: %s", err->message);
-            g_error_free(err);
         } else {
             if (!spice_qmp_dispatch_message(self))
                 g_warning("Failed to dispatch: %s", str);
@@ -244,14 +241,13 @@ spice_qmp_port_set_property(GObject *object,
 {
     SpiceQmpPort *self = SPICE_QMP_PORT(object);
 
-    switch (property_id) {
+    switch ((SpiceQmpPortProps) property_id) {
     case PROP_CHANNEL:
         g_clear_object(&self->priv->channel);
         self->priv->channel = g_value_dup_object(value);
         break;
-
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
+    case PROP_READY:
+        g_assert_not_reached();
         break;
     }
 }
@@ -264,17 +260,13 @@ spice_qmp_port_get_property(GObject *object,
 {
     SpiceQmpPort *self = SPICE_QMP_PORT(object);
 
-    switch (property_id) {
+    switch ((SpiceQmpPortProps) property_id) {
     case PROP_CHANNEL:
         g_value_set_object(value, self->priv->channel);
         break;
 
     case PROP_READY:
         g_value_set_boolean(value, self->priv->ready);
-        break;
-
-    default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
         break;
     }
 }
@@ -309,19 +301,17 @@ static void spice_qmp_port_class_init(SpiceQmpPortClass *klass)
 
     props[PROP_CHANNEL] =
         g_param_spec_object("channel",
-                            "Channel",
-                            "Associated port channel",
+                            NULL, NULL,
                             SPICE_TYPE_PORT_CHANNEL,
-                            G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_STRINGS);
+                            G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_NAME);
 
     props[PROP_READY] =
         g_param_spec_boolean("ready",
-                             "Ready",
-                             "Whether the QMP port is ready",
+                             NULL, NULL,
                              FALSE,
-                             G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
+                             G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
-    g_object_class_install_properties(gobject_class, PROP_LAST, props);
+    g_object_class_install_properties(gobject_class, G_N_ELEMENTS(props), props);
  }
 
 static void
@@ -340,13 +330,12 @@ spice_qmp_port_write_finished(GObject *source_object,
     GTask *task = G_TASK(t);
     SpiceQmpPort *self = g_task_get_source_object(task);
     gint id = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(task), "qmp-id"));
-    GError *err = NULL;
+    g_autoptr(GError) err = NULL;
 
     spice_port_channel_write_finish(port, res, &err);
     if (err) {
         g_hash_table_steal(self->priv->qmp_tasks, GINT_TO_POINTER(id));
         qmp_error_return(task, err->message);
-        g_error_free(err);
     }
 }
 
@@ -368,7 +357,7 @@ qmp(SpiceQmpPort *self, GTask *task,
     g_hash_table_insert(self->priv->qmp_tasks, GINT_TO_POINTER(id), task);
 
     len = str->len;
-    data = g_string_free(str, FALSE);
+    data = g_string_free_and_steal(str);
     spice_port_channel_write_async(self->priv->channel, data, len,
                                    g_task_get_cancellable(task),
                                    spice_qmp_port_write_finished, task);
@@ -425,6 +414,7 @@ void spice_qmp_port_vm_action_async(SpiceQmpPort *self,
     g_return_if_fail(action >= 0 && action < SPICE_QMP_PORT_VM_ACTION_LAST);
 
     task = g_task_new(self, cancellable, callback, user_data);
+    g_task_set_source_tag(task, spice_qmp_port_vm_action_async);
     g_task_set_task_data(task, qmp_empty_return_cb, NULL);
 
     switch (action) {
@@ -481,6 +471,7 @@ SpiceQmpPort *spice_qmp_port_get(SpicePortChannel *channel)
 
         self = g_object_new(SPICE_TYPE_QMP_PORT, "channel", channel, NULL);
         task = g_task_new(self, NULL, NULL, NULL);
+        g_task_set_source_tag(task, spice_qmp_port_get);
         g_task_set_task_data(task, qmp_capabilities_cb, NULL);
         qmp(SPICE_QMP_PORT(self), task, "qmp_capabilities", NULL);
     }
@@ -563,6 +554,7 @@ void spice_qmp_port_query_status_async(SpiceQmpPort *self,
     g_return_if_fail(self->priv->ready);
 
     task = g_task_new(self, cancellable, callback, user_data);
+    g_task_set_source_tag(task, spice_qmp_port_query_status_async);
     g_task_set_task_data(task, qmp_query_status_return_cb, NULL);
 
     qmp(self, task, "query-status", NULL);

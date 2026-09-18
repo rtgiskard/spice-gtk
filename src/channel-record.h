@@ -82,4 +82,5 @@ void            spice_record_send_data(SpiceRecordChannel *channel, gpointer dat
                                        gsize bytes, guint32 time);
 #endif
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (SpiceRecordChannel, g_object_unref)
 G_END_DECLS

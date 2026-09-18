@@ -93,7 +93,7 @@ endif
 #
 # check for mandatory dependencies
 #
-glib_version = '2.68'
+glib_version = '2.78'
 glib_version_info = '>= @0@'.format(glib_version)
 pixman_version = '>= 0.17.7'
 

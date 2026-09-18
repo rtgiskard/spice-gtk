@@ -68,7 +68,7 @@ G_DEFINE_TYPE(SpiceFileTransferTask, spice_file_transfer_task, G_TYPE_OBJECT)
 
 #define FILE_XFER_CHUNK_SIZE (VD_AGENT_MAX_DATA_SIZE * 32)
 
-enum {
+typedef enum {
     PROP_TASK_ID = 1,
     PROP_TASK_CHANNEL,
     PROP_TASK_CANCELLABLE,
@@ -76,7 +76,9 @@ enum {
     PROP_TASK_TOTAL_BYTES,
     PROP_TASK_TRANSFERRED_BYTES,
     PROP_TASK_PROGRESS,
-};
+} SpiceFileTransferTaskProps;
+
+static GParamSpec *props[PROP_TASK_PROGRESS + 1] = { NULL, };
 
 enum {
     SIGNAL_FINISHED,
@@ -96,26 +98,22 @@ spice_file_transfer_task_new(SpiceMainChannel *channel,
                              GCancellable *cancellable)
 {
     static uint32_t xfer_id = 1;    /* Used to identify task id */
-    GCancellable *task_cancellable = cancellable;
+    g_autoptr(GCancellable) task_cancellable = NULL;
     SpiceFileTransferTask *self;
 
     /* if a cancellable object was not provided for the overall operation,
      * create a separate object for each file so that they can be cancelled
      * separately  */
-    if (!task_cancellable)
+    if (!cancellable)
         task_cancellable = g_cancellable_new();
 
     self = g_object_new(SPICE_TYPE_FILE_TRANSFER_TASK,
                         "id", xfer_id++,
                         "file", file,
                         "channel", channel,
-                        "cancellable", task_cancellable,
+                        "cancellable", task_cancellable ?: cancellable,
                         NULL);
     self->flags = flags;
-
-    /* if we created a GCancellable above, unref it */
-    if (!cancellable)
-        g_object_unref(task_cancellable);
 
     return self;
 }
@@ -154,8 +152,8 @@ static void spice_file_transfer_task_query_info_cb(GObject *obj,
 
     /* SpiceFileTransferTask's init is done, handshake for file-transfer will
      * start soon. First "progress" can be emitted ~ 0% */
-    g_object_notify(G_OBJECT(self), "total-bytes");
-    g_object_notify(G_OBJECT(self), "progress");
+    g_object_notify_by_pspec(G_OBJECT(self), props[PROP_TASK_TOTAL_BYTES]);
+    g_object_notify_by_pspec(G_OBJECT(self), props[PROP_TASK_PROGRESS]);
 
     g_task_return_pointer(task, info, g_object_unref);
     g_object_unref(task);
@@ -233,11 +231,10 @@ static void spice_file_transfer_task_read_stream_cb(GObject *source_object,
         gint64 now = g_get_monotonic_time();
 
         if (interval < now - self->last_update) {
-            gchar *basename = g_file_get_basename(self->file);
+            g_autofree gchar *basename = g_file_get_basename(self->file);
             self->last_update = now;
             SPICE_DEBUG("read %.2f%% of the file %s",
                         100.0 * self->read_bytes / self->file_size, basename);
-            g_free(basename);
         }
     }
 
@@ -250,10 +247,8 @@ static void spice_file_transfer_task_close_stream_cb(GObject      *object,
                                                      GAsyncResult *close_res,
                                                      gpointer      user_data)
 {
-    SpiceFileTransferTask *self;
-    GError *error = NULL;
-
-    self = user_data;
+    g_autoptr(SpiceFileTransferTask) self = user_data;
+    g_autoptr(GError) error = NULL;
 
     if (object) {
         GInputStream *stream = G_INPUT_STREAM(object);
@@ -261,26 +256,20 @@ static void spice_file_transfer_task_close_stream_cb(GObject      *object,
         if (error) {
             /* This error dont need to report to user, just print a log */
             SPICE_DEBUG("close file error: %s", error->message);
-            g_clear_error(&error);
         }
     }
 
     if (self->error == NULL && spice_util_get_debug()) {
         gint64 now = g_get_monotonic_time();
-        gchar *basename = g_file_get_basename(self->file);
+        g_autofree gchar *basename = g_file_get_basename(self->file);
         double seconds = (double) (now - self->start_time) / G_TIME_SPAN_SECOND;
-        gchar *file_size_str = g_format_size(self->file_size);
-        gchar *transfer_speed_str = g_format_size(self->file_size / seconds);
+        g_autofree gchar *file_size_str = g_format_size(self->file_size);
+        g_autofree gchar *transfer_speed_str = g_format_size(self->file_size / seconds);
 
         g_warn_if_fail(self->read_bytes == self->file_size);
         SPICE_DEBUG("transferred file %s of %s size in %.1f seconds (%s/s)",
                     basename, file_size_str, seconds, transfer_speed_str);
-
-        g_free(basename);
-        g_free(file_size_str);
-        g_free(transfer_speed_str);
     }
-    g_object_unref(self);
 }
 
 
@@ -298,10 +287,9 @@ void spice_file_transfer_task_completed(SpiceFileTransferTask *self,
     if (self->error)
         g_clear_error(&error);
     if (error) {
-        gchar *path = g_file_get_path(self->file);
+        g_autofree gchar *path = g_file_get_path(self->file);
         SPICE_DEBUG("File %s xfer failed: %s",
                     path, error->message);
-        g_free(path);
         self->error = error;
     }
 
@@ -392,6 +380,7 @@ void spice_file_transfer_task_init_task_async(SpiceFileTransferTask *self,
     g_return_if_fail(self->pending == FALSE);
 
     task = g_task_new(self, self->cancellable, callback, userdata);
+    g_task_set_source_tag(task, spice_file_transfer_task_init_task_async);
 
     self->pending = TRUE;
     g_file_read_async(self->file,
@@ -418,7 +407,7 @@ void spice_file_transfer_task_read_async(SpiceFileTransferTask *self,
                                          GAsyncReadyCallback callback,
                                          gpointer userdata)
 {
-    GTask *task;
+    g_autoptr(GTask) task = NULL;
 
     g_return_if_fail(self != NULL);
     if (self->pending) {
@@ -437,6 +426,7 @@ void spice_file_transfer_task_read_async(SpiceFileTransferTask *self,
     g_coroutine_object_notify(G_OBJECT(self), "transferred-bytes");
 
     task = g_task_new(self, self->cancellable, callback, userdata);
+    g_task_set_source_tag(task, spice_file_transfer_task_read_async);
 
     if (self->read_bytes == self->file_size) {
         /* channel-main might request data after reading the whole file as it
@@ -444,7 +434,6 @@ void spice_file_transfer_task_read_async(SpiceFileTransferTask *self,
          * reach a state where agent says file-transfer SUCCEED but we are in a
          * PENDING state in SpiceFileTransferTask due reading in idle */
         g_task_return_int(task, 0);
-        g_object_unref(task);
         return;
     }
 
@@ -455,7 +444,7 @@ void spice_file_transfer_task_read_async(SpiceFileTransferTask *self,
                               G_PRIORITY_DEFAULT,
                               self->cancellable,
                               spice_file_transfer_task_read_stream_cb,
-                              task);
+                              g_steal_pointer(&task));
 }
 
 G_GNUC_INTERNAL
@@ -591,7 +580,7 @@ spice_file_transfer_task_get_property(GObject *object,
 {
     SpiceFileTransferTask *self = SPICE_FILE_TRANSFER_TASK(object);
 
-    switch (property_id)
+    switch ((SpiceFileTransferTaskProps) property_id)
     {
         case PROP_TASK_ID:
             g_value_set_uint(value, self->id);
@@ -608,8 +597,12 @@ spice_file_transfer_task_get_property(GObject *object,
         case PROP_TASK_PROGRESS:
             g_value_set_double(value, spice_file_transfer_task_get_progress(self));
             break;
-        default:
-            G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
+        case PROP_TASK_CHANNEL:
+            g_value_set_object(value, self->channel);
+            break;
+        case PROP_TASK_CANCELLABLE:
+            g_value_set_object(value, self->cancellable);
+            break;
     }
 }
 
@@ -621,7 +614,7 @@ spice_file_transfer_task_set_property(GObject *object,
 {
     SpiceFileTransferTask *self = SPICE_FILE_TRANSFER_TASK(object);
 
-    switch (property_id)
+    switch ((SpiceFileTransferTaskProps) property_id)
     {
         case PROP_TASK_ID:
             self->id = g_value_get_uint(value);
@@ -635,8 +628,11 @@ spice_file_transfer_task_set_property(GObject *object,
         case PROP_TASK_CANCELLABLE:
             self->cancellable = g_value_dup_object(value);
             break;
-        default:
-            G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
+        case PROP_TASK_TOTAL_BYTES:
+        case PROP_TASK_TRANSFERRED_BYTES:
+        case PROP_TASK_PROGRESS:
+            g_assert_not_reached();
+            break;
     }
 }
 
@@ -672,12 +668,11 @@ spice_file_transfer_task_constructed(GObject *object)
     SpiceFileTransferTask *self = SPICE_FILE_TRANSFER_TASK(object);
 
     if (spice_util_get_debug()) {
-        gchar *basename = g_file_get_basename(self->file);
+        g_autofree gchar *basename = g_file_get_basename(self->file);
         self->start_time = g_get_monotonic_time();
         self->last_update = self->start_time;
 
         SPICE_DEBUG("transfer of file %s has started", basename);
-        g_free(basename);
     }
 }
 
@@ -699,13 +694,10 @@ spice_file_transfer_task_class_init(SpiceFileTransferTaskClass *klass)
      *
      * Since: 0.31
      **/
-    g_object_class_install_property(object_class, PROP_TASK_ID,
-                                    g_param_spec_uint("id",
-                                                      "id",
-                                                      "The id of the task",
-                                                      0, G_MAXUINT, 0,
-                                                      G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                                                      G_PARAM_STATIC_STRINGS));
+    props[PROP_TASK_ID] = g_param_spec_uint("id",
+                                            NULL, NULL,
+                                            0, G_MAXUINT, 0,
+                                            G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceFileTransferTask:channel:
@@ -714,13 +706,10 @@ spice_file_transfer_task_class_init(SpiceFileTransferTaskClass *klass)
      *
      * Since: 0.31
      **/
-    g_object_class_install_property(object_class, PROP_TASK_CHANNEL,
-                                    g_param_spec_object("channel",
-                                                        "channel",
-                                                        "The channel transferring the file",
-                                                        SPICE_TYPE_MAIN_CHANNEL,
-                                                        G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                                                        G_PARAM_STATIC_STRINGS));
+    props[PROP_TASK_CHANNEL] = g_param_spec_object("channel",
+                                                   NULL, NULL,
+                                                   SPICE_TYPE_MAIN_CHANNEL,
+                                                   G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceFileTransferTask:cancellable:
@@ -729,13 +718,10 @@ spice_file_transfer_task_class_init(SpiceFileTransferTaskClass *klass)
      *
      * Since: 0.31
      **/
-    g_object_class_install_property(object_class, PROP_TASK_CANCELLABLE,
-                                    g_param_spec_object("cancellable",
-                                                        "cancellable",
-                                                        "The object used to cancel the task",
-                                                        G_TYPE_CANCELLABLE,
-                                                        G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                                                        G_PARAM_STATIC_STRINGS));
+    props[PROP_TASK_CANCELLABLE] = g_param_spec_object("cancellable",
+                                                       NULL, NULL,
+                                                       G_TYPE_CANCELLABLE,
+                                                       G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceFileTransferTask:file:
@@ -744,13 +730,10 @@ spice_file_transfer_task_class_init(SpiceFileTransferTaskClass *klass)
      *
      * Since: 0.31
      **/
-    g_object_class_install_property(object_class, PROP_TASK_FILE,
-                                    g_param_spec_object("file",
-                                                        "File",
-                                                        "The file being transferred",
-                                                        G_TYPE_FILE,
-                                                        G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE |
-                                                        G_PARAM_STATIC_STRINGS));
+    props[PROP_TASK_FILE] = g_param_spec_object("file",
+                                                NULL, NULL,
+                                                G_TYPE_FILE,
+                                                G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 
     /**
      * SpiceFileTransferTask:total-bytes:
@@ -759,13 +742,10 @@ spice_file_transfer_task_class_init(SpiceFileTransferTaskClass *klass)
      *
      * Since: 0.33
      **/
-    g_object_class_install_property(object_class, PROP_TASK_TOTAL_BYTES,
-                                    g_param_spec_uint64("total-bytes",
-                                                        "Total bytes",
-                                                        "The size in bytes of the file transferred",
-                                                        0, G_MAXUINT64, 0,
-                                                        G_PARAM_READABLE |
-                                                        G_PARAM_STATIC_STRINGS));
+    props[PROP_TASK_TOTAL_BYTES] = g_param_spec_uint64("total-bytes",
+                                                       NULL, NULL,
+                                                       0, G_MAXUINT64, 0,
+                                                       G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
 
     /**
@@ -775,13 +755,10 @@ spice_file_transfer_task_class_init(SpiceFileTransferTaskClass *klass)
      *
      * Since: 0.33
      **/
-    g_object_class_install_property(object_class, PROP_TASK_TRANSFERRED_BYTES,
-                                    g_param_spec_uint64("transferred-bytes",
-                                                        "Transferred bytes",
-                                                        "The number of bytes transferred",
-                                                        0, G_MAXUINT64, 0,
-                                                        G_PARAM_READABLE |
-                                                        G_PARAM_STATIC_STRINGS));
+    props[PROP_TASK_TRANSFERRED_BYTES] = g_param_spec_uint64("transferred-bytes",
+                                                             NULL, NULL,
+                                                             0, G_MAXUINT64, 0,
+                                                             G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 
 
     /**
@@ -793,13 +770,12 @@ spice_file_transfer_task_class_init(SpiceFileTransferTaskClass *klass)
      *
      * Since: 0.31
      **/
-    g_object_class_install_property(object_class, PROP_TASK_PROGRESS,
-                                    g_param_spec_double("progress",
-                                                        "Progress",
-                                                        "The percentage of the file transferred",
-                                                        0.0, 1.0, 0.0,
-                                                        G_PARAM_READABLE |
-                                                        G_PARAM_STATIC_STRINGS));
+    props[PROP_TASK_PROGRESS] = g_param_spec_double("progress",
+                                                    NULL, NULL,
+                                                    0.0, 1.0, 0.0,
+                                                    G_PARAM_READABLE | G_PARAM_STATIC_NAME);
+
+    g_object_class_install_properties(object_class, G_N_ELEMENTS(props), props);
 
     /**
      * SpiceFileTransferTask::finished:
