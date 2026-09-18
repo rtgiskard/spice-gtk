@@ -140,7 +140,7 @@ device_iteration(const int loop, const bool attach_on_connect)
         ch_state = SPICE_CHANNEL_STATE_CONNECTING;
     }
     if (attach_on_connect) {
-        g_assert_true(spice_usb_backend_channel_attach(usb_ch, device, &err));
+        g_assert_true(spice_usb_backend_channel_attach(usb_ch, device, -1, &err));
         g_assert_null(err);
         if (ch_state == SPICE_CHANNEL_STATE_READY) {
             hellos_expected = MIN(hellos_expected + 1, 1);
@@ -182,7 +182,7 @@ device_iteration(const int loop, const bool attach_on_connect)
     }
 
     if (!attach_on_connect) {
-        g_assert_true(spice_usb_backend_channel_attach(usb_ch, device, &err));
+        g_assert_true(spice_usb_backend_channel_attach(usb_ch, device, -1 ,&err));
         g_assert_null(err);
     }
     g_assert_cmpint(hellos_sent, ==, 1);

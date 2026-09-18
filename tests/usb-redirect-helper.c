@@ -17,7 +17,7 @@
 
 #include <stdio.h>
 #include <glib.h>
-#include "usb-acl-helper.h"
+#include "usb-redirect-helper.h"
 
 typedef struct {
     SpiceUsbAclHelper *acl_helper;

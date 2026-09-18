@@ -1214,6 +1214,7 @@ static gboolean attach_edev(SpiceUsbBackendChannel *ch,
 
 gboolean spice_usb_backend_channel_attach(SpiceUsbBackendChannel *ch,
                                           SpiceUsbDevice *dev,
+                                          gint fd,
                                           GError **error)
 {
     int rc = 0;
@@ -1242,7 +1243,12 @@ gboolean spice_usb_backend_channel_attach(SpiceUsbBackendChannel *ch,
         */
         set_redirecting(ch->backend, TRUE);
 
-        rc = libusb_open(dev->libusb_device, &handle);
+        if (fd >= 0) {
+            /* fd already opened by usbredir-helper daemon */
+            rc = libusb_wrap_sys_device(ch->backend->libusb_context, fd, &handle);
+        } else {
+            rc = libusb_open(dev->libusb_device, &handle);
+        }
 
         set_redirecting(ch->backend, FALSE);
     }

@@ -85,6 +85,7 @@ int spice_usb_backend_read_guest_data(SpiceUsbBackendChannel *ch, uint8_t *data,
 GError *spice_usb_backend_get_error_details(int error_code, gchar *device_desc);
 gboolean spice_usb_backend_channel_attach(SpiceUsbBackendChannel *ch,
                                           SpiceUsbDevice *dev,
+                                          gint fd,
                                           GError **error);
 void spice_usb_backend_channel_detach(SpiceUsbBackendChannel *ch);
 void spice_usb_backend_channel_flush_writes(SpiceUsbBackendChannel *ch);

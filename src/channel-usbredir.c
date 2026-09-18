@@ -26,7 +26,7 @@
 #include <lz4.h>
 #endif
 #ifdef USE_POLKIT
-#include "usb-acl-helper.h"
+#include "usb-redirect-helper.h"
 #endif
 #include "channel-usbredir-priv.h"
 #include "usb-device-manager-priv.h"
@@ -237,7 +237,7 @@ void spice_usbredir_channel_set_context(SpiceUsbredirChannel *channel,
 }
 
 static gboolean spice_usbredir_channel_open_device(
-    SpiceUsbredirChannel *channel, GError **err)
+    SpiceUsbredirChannel *channel, gint fd,  GError **err)
 {
     SpiceUsbredirChannelPrivate *priv = channel->priv;
 
@@ -247,7 +247,7 @@ static gboolean spice_usbredir_channel_open_device(
 #endif
                          , FALSE);
 
-    if (!spice_usb_backend_channel_attach(priv->host, priv->device, err)) {
+    if (!spice_usb_backend_channel_attach(priv->host, priv->device, fd,  err)) {
         if (*err == NULL) {
             g_set_error(err, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
                 "Error attaching device: (no error information)");
@@ -273,13 +273,14 @@ static void spice_usbredir_channel_open_acl_cb(
     g_return_if_fail(priv->state == STATE_WAITING_FOR_ACL_HELPER ||
                      priv->state == STATE_DISCONNECTING);
 
-    spice_usb_acl_helper_open_acl_finish(acl_helper, acl_res, &err);
+    gint fd = spice_usb_acl_helper_open_acl_finish(acl_helper, acl_res, &err);
+
     if (!err && priv->state == STATE_DISCONNECTING) {
         err = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_CANCELLED,
                                   "USB redirection channel connect cancelled");
     }
     if (!err) {
-        spice_usbredir_channel_open_device(channel, &err);
+        spice_usbredir_channel_open_device(channel, fd, &err);
     }
     if (err) {
         g_clear_pointer(&priv->device, spice_usb_backend_device_unref);
@@ -309,7 +310,7 @@ _open_device_async_cb(GTask *task,
 
     spice_usbredir_channel_lock(channel);
 
-    if (!spice_usbredir_channel_open_device(channel, &err)) {
+    if (!spice_usbredir_channel_open_device(channel, -1, &err)) {
         g_clear_pointer(&priv->device, spice_usb_backend_device_unref);
     }
 

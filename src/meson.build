@@ -182,8 +182,8 @@ if spice_gtk_has_builtin_mjpeg
 endif
 
 if spice_gtk_has_polkit
-  spice_client_glib_sources += ['usb-acl-helper.c',
-                                'usb-acl-helper.h']
+  spice_client_glib_sources += ['usb-redirect-helper.c',
+                                'usb-redirect-helper.h']
 endif
 
 if spice_gtk_has_phodav
