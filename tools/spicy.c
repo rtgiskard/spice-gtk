@@ -709,38 +709,37 @@ static void restore_configuration(SpiceWindow *win)
 /* ------------------------------------------------------------------ */
 
 static const GActionEntry entries[] = {
-    { "Connect", menu_cb_connect },
-    { "Close", menu_cb_close },
-    { "CopyToGuest", menu_cb_copy },
-    { "PasteFromGuest", menu_cb_paste },
-    { "Fullscreen", menu_cb_fullscreen },
-    { "ResizeTo", menu_cb_resize_to },
+    { .name = "Connect", .activate = menu_cb_connect },
+    { .name = "Close", .activate = menu_cb_close },
+    { .name = "CopyToGuest", .activate = menu_cb_copy },
+    { .name = "PasteFromGuest", .activate = menu_cb_paste },
+    { .name = "Fullscreen", .activate = menu_cb_fullscreen },
+    { .name = "ResizeTo", .activate = menu_cb_resize_to },
 #ifdef USE_SMARTCARD
-    { "InsertSmartcard", menu_cb_insert_smartcard },
-    { "RemoveSmartcard", menu_cb_remove_smartcard },
+    { .name = "InsertSmartcard", .activate = menu_cb_insert_smartcard },
+    { .name = "RemoveSmartcard", .activate = menu_cb_remove_smartcard },
 #endif
 #ifdef USE_USBREDIR
-    { "SelectUsbDevices", menu_cb_select_usb_devices },
+    { .name = "SelectUsbDevices", .activate = menu_cb_select_usb_devices },
 #endif
-    { "MouseMode", menu_cb_mouse_mode },
-    { "About", menu_cb_about },
+    { .name = "MouseMode", .activate = menu_cb_mouse_mode },
+    { .name = "About", .activate = menu_cb_about },
 
     /* Toggle actions */
-    { "grab-keyboard", NULL, NULL, "false", menu_cb_bool_prop },
-    { "grab-mouse", NULL, NULL, "false", menu_cb_bool_prop },
-    { "resize-guest", NULL, NULL, "false", menu_cb_bool_prop },
-    { "scaling", NULL, NULL, "false", menu_cb_bool_prop },
-    { "disable-inputs", NULL, NULL, "false", menu_cb_bool_prop },
-    { "sync-modifiers", NULL, NULL, "false", menu_cb_bool_prop },
-    { "auto-clipboard", NULL, NULL, "false", menu_cb_bool_prop },
-    { "auto-usbredir", NULL, NULL, "false", menu_cb_bool_prop },
-    { "Statusbar", NULL, NULL, "true", menu_cb_statusbar },
-    { "Toolbar", NULL, NULL, "true", menu_cb_toolbar },
-
+    { .name = "grab-keyboard", .state = "false", .change_state = menu_cb_bool_prop },
+    { .name = "grab-mouse", .state = "false", .change_state = menu_cb_bool_prop },
+    { .name = "resize-guest", .state = "false", .change_state = menu_cb_bool_prop },
+    { .name = "scaling", .state = "false", .change_state = menu_cb_bool_prop },
+    { .name = "disable-inputs", .state = "false", .change_state = menu_cb_bool_prop },
+    { .name = "sync-modifiers", .state = "false", .change_state = menu_cb_bool_prop },
+    { .name = "auto-clipboard", .state = "false", .change_state = menu_cb_bool_prop },
+    { .name = "auto-usbredir", .state = "false", .change_state = menu_cb_bool_prop },
+    { .name = "Statusbar", .state = "true", .change_state = menu_cb_statusbar },
+    { .name = "Toolbar", .state = "true", .change_state = menu_cb_toolbar },
     /* Radio actions */
-    { "preferred-compression", NULL, "s", "'auto-glz'", compression_cb },
-    { "preferred-video-codec-type", NULL, "s", "'mjpeg'", video_codec_type_cb },
-    { "recent-item", recent_item_activated_cb, "s", NULL, NULL }
+    { .name = "preferred-compression", .parameter_type = "s", .state = "'auto-glz'", .change_state = compression_cb },
+    { .name = "preferred-video-codec-type", .parameter_type = "s", .state = "'mjpeg'", .change_state = video_codec_type_cb },
+    { .name = "recent-item", .activate = recent_item_activated_cb, .parameter_type = "s" }
 };
 
 static const char *spice_display_properties[] = {
@@ -995,7 +994,7 @@ static void compression_cb(GSimpleAction *action,
 {
     SpiceWindow *win = user_data;
     const char *comp_str = g_variant_get_string(variant, NULL);
-    gint comp;
+    gint comp = SPICE_IMAGE_COMPRESSION_INVALID;
     guint i;
 
     for (i = 0; i < G_N_ELEMENTS(compression_entries); i++) {
