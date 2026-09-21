@@ -77,9 +77,9 @@ static void entry_changed_cb(GtkEditable* entry, gpointer data)
 
 static gboolean entry_focus_in_cb(GtkWidget *widget, GdkEvent *event, gpointer data)
 {
-    GtkRecentChooser *recent = GTK_RECENT_CHOOSER(data);
-    gtk_recent_chooser_unselect_all(recent);
-    return TRUE;
+    GtkListBox *recent = GTK_LIST_BOX(data);
+    gtk_list_box_unselect_all(recent);
+    return FALSE;
 }
 
 static gboolean key_pressed_cb(GtkWidget *widget, GdkEvent *event, gpointer data)
@@ -98,19 +98,14 @@ static gboolean key_pressed_cb(GtkWidget *widget, GdkEvent *event, gpointer data
     return FALSE;
 }
 
-static void recent_selection_changed_dialog_cb(GtkRecentChooser *chooser, gpointer data)
+static void recent_selection_changed_dialog_cb(GtkListBox *box, GtkListBoxRow *chooser, gpointer data)
 {
-    GtkRecentInfo *info;
     gchar *txt = NULL;
     const gchar *uri;
     SpiceSession *session = data;
     int i;
 
-    info = gtk_recent_chooser_get_current_item(chooser);
-    if (info == NULL)
-        return;
-
-    uri = gtk_recent_info_get_uri(info);
+    uri = g_object_get_data(G_OBJECT(chooser), "recent-uri");
     g_return_if_fail(uri != NULL);
 
     g_object_set(session, "uri", uri, NULL);
@@ -120,8 +115,6 @@ static void recent_selection_changed_dialog_cb(GtkRecentChooser *chooser, gpoint
         gtk_entry_set_text(GTK_ENTRY(connect_entries[i].entry), txt ? txt : "");
         g_free(txt);
     }
-
-    gtk_recent_info_unref(info);
 }
 
 static void connect_cb(gpointer data)
@@ -154,21 +147,28 @@ gboolean spicy_connect_dialog(SpiceSession *session)
     window = GTK_WINDOW(gtk_window_new(GTK_WINDOW_TOPLEVEL));
     gtk_window_set_title(window, "Connect to SPICE");
     gtk_window_set_resizable(window, FALSE);
-    gtk_container_set_border_width(GTK_CONTAINER(window), 5);
+    gtk_widget_set_margin_start(GTK_WIDGET(window), 5);
+    gtk_widget_set_margin_end(GTK_WIDGET(window), 5);
+    gtk_widget_set_margin_top(GTK_WIDGET(window), 5);
+    gtk_widget_set_margin_bottom(GTK_WIDGET(window), 5);
 
     main_box = GTK_BOX(gtk_box_new(GTK_ORIENTATION_VERTICAL, 0));
     gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(main_box));
 
     grid = GTK_GRID(gtk_grid_new());
     gtk_box_pack_start(main_box, GTK_WIDGET(grid), FALSE, TRUE, 0);
-    gtk_container_set_border_width(GTK_CONTAINER(grid), 5);
+    gtk_widget_set_margin_start(GTK_WIDGET(grid), 5);
+    gtk_widget_set_margin_end(GTK_WIDGET(grid), 5);
+    gtk_widget_set_margin_top(GTK_WIDGET(grid), 5);
+    gtk_widget_set_margin_bottom(GTK_WIDGET(grid), 5);
     gtk_grid_set_row_spacing(grid, 5);
     gtk_grid_set_column_spacing(grid, 5);
 
     for (i = 0; i < SPICE_N_ELEMENTS(connect_entries); i++) {
         gchar *txt;
         label = gtk_label_new(connect_entries[i].text);
-        gtk_misc_set_alignment(GTK_MISC(label), 0, 0.5);
+        gtk_label_set_xalign(GTK_LABEL(label), 0.0);
+        gtk_label_set_yalign(GTK_LABEL(label), 0.5);
         gtk_grid_attach(grid, label, 0, i, 1, 1);
         connect_entries[i].entry = GTK_WIDGET(gtk_entry_new());
         gtk_grid_attach(grid, connect_entries[i].entry, 1, i, 1, 1);
@@ -183,20 +183,27 @@ gboolean spicy_connect_dialog(SpiceSession *session)
 
     recent_box = GTK_BOX(gtk_box_new(GTK_ORIENTATION_VERTICAL, 0));
     gtk_box_pack_start(main_box, GTK_WIDGET(recent_box), TRUE, TRUE, 0);
-    gtk_container_set_border_width(GTK_CONTAINER(recent_box), 5);
+    gtk_widget_set_margin_start(GTK_WIDGET(recent_box), 5);
+    gtk_widget_set_margin_end(GTK_WIDGET(recent_box), 5);
+    gtk_widget_set_margin_top(GTK_WIDGET(recent_box), 5);
+    gtk_widget_set_margin_bottom(GTK_WIDGET(recent_box), 5);
 
     label = gtk_label_new("Recent connections:");
     gtk_box_pack_start(recent_box, label, FALSE, TRUE, 0);
-    gtk_misc_set_alignment(GTK_MISC(label), 0, 0.5);
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0);
+    gtk_label_set_yalign(GTK_LABEL(label), 0.5);
 
-    button_box = GTK_BOX(gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL));
-    gtk_button_box_set_layout(GTK_BUTTON_BOX(button_box), GTK_BUTTONBOX_END);
-    gtk_box_set_spacing(button_box, 5);
-    gtk_container_set_border_width(GTK_CONTAINER(button_box), 5);
+    button_box = GTK_BOX(gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5));
+    gtk_widget_set_halign(GTK_WIDGET(button_box), GTK_ALIGN_END);
+    gtk_widget_set_margin_start(GTK_WIDGET(button_box), 5);
+    gtk_widget_set_margin_end(GTK_WIDGET(button_box), 5);
+    gtk_widget_set_margin_top(GTK_WIDGET(button_box), 5);
+    gtk_widget_set_margin_bottom(GTK_WIDGET(button_box), 5);
+
     connect_button = gtk_button_new_with_label("Connect");
     cancel_button = gtk_button_new_with_label("Cancel");
     gtk_box_pack_start(button_box, cancel_button, FALSE, TRUE, 0);
-    gtk_box_pack_start(button_box, connect_button, FALSE, TRUE, 1);
+    gtk_box_pack_start(button_box, connect_button, FALSE, TRUE, 0);
 
     gtk_box_pack_start(main_box, GTK_WIDGET(button_box), FALSE, TRUE, 0);
 
@@ -211,21 +218,47 @@ gboolean spicy_connect_dialog(SpiceSession *session)
     g_signal_connect_swapped(cancel_button, "clicked",
                              G_CALLBACK(close_cb), &info);
 
-    GtkRecentFilter *rfilter;
-    GtkWidget *recent;
 
-    recent = GTK_WIDGET(gtk_recent_chooser_widget_new());
-    gtk_recent_chooser_set_show_icons(GTK_RECENT_CHOOSER(recent), FALSE);
-    gtk_box_pack_start(recent_box, recent, TRUE, TRUE, 0);
+    GtkWidget *frame, *scrolled_win, *recent;
+    GtkRecentManager *manager;
+    GList *items, *l;
 
-    rfilter = gtk_recent_filter_new();
-    gtk_recent_filter_add_mime_type(rfilter, "application/x-spice");
-    gtk_recent_chooser_set_filter(GTK_RECENT_CHOOSER(recent), rfilter);
-    gtk_recent_chooser_set_local_only(GTK_RECENT_CHOOSER(recent), FALSE);
-    g_signal_connect(recent, "selection-changed",
+    frame = gtk_frame_new(NULL);
+    gtk_frame_set_shadow_type(GTK_FRAME(frame), GTK_SHADOW_IN);
+    gtk_box_pack_start(recent_box, frame, TRUE, TRUE, 0);
+
+    scrolled_win = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_win),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_container_add(GTK_CONTAINER(frame), scrolled_win);
+
+    recent = gtk_list_box_new();
+    gtk_container_add(GTK_CONTAINER(scrolled_win), recent);
+
+    manager = gtk_recent_manager_get_default();
+    items = gtk_recent_manager_get_items(manager);
+
+    for (l = items; l != NULL; l = l->next) {
+        GtkRecentInfo *rinfo = l->data;
+        const gchar *mime = gtk_recent_info_get_mime_type(rinfo);
+
+        if (g_strcmp0(mime, "application/x-spice") == 0) {
+            const gchar *uri = gtk_recent_info_get_uri(rinfo);
+            GtkWidget *label = gtk_label_new(uri);
+
+            gtk_label_set_xalign(GTK_LABEL(label), 0.0);
+
+            GtkWidget *row = gtk_list_box_row_new();
+            gtk_container_add(GTK_CONTAINER(row), label);
+            g_object_set_data_full(G_OBJECT(row), "recent-uri", g_strdup(uri), g_free);
+
+            gtk_container_add(GTK_CONTAINER(recent), row);
+        }
+    }
+    g_list_free_full(items, (GDestroyNotify)gtk_recent_info_unref);
+
+    g_signal_connect(recent, "row-selected",
                      G_CALLBACK(recent_selection_changed_dialog_cb), session);
-    g_signal_connect_swapped(recent, "item-activated",
-                             G_CALLBACK(connect_cb), &info);
 
     for (i = 0; i < SPICE_N_ELEMENTS(connect_entries); i++) {
         g_signal_connect_swapped(connect_entries[i].entry, "activate",

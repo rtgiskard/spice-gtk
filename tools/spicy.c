@@ -55,25 +55,25 @@ typedef struct _SpiceWindow SpiceWindow;
 typedef struct _SpiceWindowClass SpiceWindowClass;
 
 struct _SpiceWindow {
-    GObject          object;
-    spice_connection *conn;
-    gint             id;
-    gint             monitor_id;
-    GtkWidget        *toplevel, *spice;
-    GtkWidget        *menubar, *toolbar;
-    GtkWidget        *ritem, *rmenu;
-    GtkWidget        *statusbar, *status, *st[STATE_MAX];
-    GtkActionGroup   *ag;
-    GtkUIManager     *ui;
-    bool             fullscreen;
-    bool             mouse_grabbed;
-    SpiceChannel     *display_channel;
+    GObject            object;
+    spice_connection   *conn;
+    gint               id;
+    gint               monitor_id;
+    GtkWidget          *toplevel, *spice;
+    GtkWidget          *menubar, *toolbar;
+    GtkWidget          *ritem, *rmenu;
+    GtkWidget          *statusbar, *status, *st[STATE_MAX];
+    GSimpleActionGroup *ag;
+    GtkBuilder         *ui;
+    bool               fullscreen;
+    bool               mouse_grabbed;
+    SpiceChannel       *display_channel;
 #ifdef G_OS_WIN32
-    gint             win_x;
-    gint             win_y;
+    gint               win_x;
+    gint               win_y;
 #endif
-    gboolean         enable_accels_save;
-    gboolean         enable_mnemonics_save;
+    gboolean           enable_accels_save;
+    gboolean           enable_mnemonics_save;
 };
 
 struct _SpiceWindowClass
@@ -107,6 +107,17 @@ struct spice_connection {
     GtkWidget *transfer_dialog;
 };
 
+static gboolean is_gtk_session_property(const gchar *property);
+static void recent_item_activated_cb(GSimpleAction *chooser,
+                                     GVariant *variant,
+                                     gpointer data);
+static void compression_cb(GSimpleAction *action,
+                           GVariant *variant,
+                           gpointer user_data);
+static void video_codec_type_cb(GSimpleAction *action,
+                                GVariant *variant,
+                                gpointer user_data);
+static void del_window(spice_connection *conn, SpiceWindow *win);
 static spice_connection *connection_new(void);
 static void connection_connect(spice_connection *conn);
 static void connection_disconnect(spice_connection *conn);
@@ -116,8 +127,6 @@ static void usb_connect_failed(GObject               *object,
                                SpiceUsbDevice        *device,
                                GError                *error,
                                gpointer               data);
-static gboolean is_gtk_session_property(const gchar *property);
-static void del_window(spice_connection *conn, SpiceWindow *win);
 
 /* options */
 static gboolean fullscreen = false;
@@ -152,7 +161,8 @@ static int ask_user(GtkWidget *parent, char *title, char *message,
     area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
 
     label = gtk_label_new(message);
-    gtk_misc_set_alignment(GTK_MISC(label), 0, 0.5);
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_widget_set_valign(label, GTK_ALIGN_CENTER);
     gtk_box_pack_start(GTK_BOX(area), label, FALSE, FALSE, 5);
 
     entry = gtk_entry_new();
@@ -220,7 +230,7 @@ static const char *spice_edit_properties[] = {
 static void update_edit_menu_window(SpiceWindow *win)
 {
     int i;
-    GtkAction *toggle;
+    GAction *toggle;
 
     if (win == NULL) {
         return;
@@ -229,9 +239,9 @@ static void update_edit_menu_window(SpiceWindow *win)
     /* Make "CopyToGuest" and "PasteFromGuest" insensitive if spice
      * agent is not connected */
     for (i = 0; i < G_N_ELEMENTS(spice_edit_properties); i++) {
-        toggle = gtk_action_group_get_action(win->ag, spice_edit_properties[i]);
-        if (toggle) {
-            gtk_action_set_sensitive(toggle, win->conn->agent_connected);
+        toggle = g_action_map_lookup_action(G_ACTION_MAP(win->ag), spice_edit_properties[i]);
+        if (G_IS_SIMPLE_ACTION(toggle)) {
+            g_simple_action_set_enabled(G_SIMPLE_ACTION(toggle), win->conn->agent_connected);
         }
     }
 }
@@ -247,7 +257,7 @@ static void update_edit_menu(struct spice_connection *conn)
     }
 }
 
-static void menu_cb_connect(GtkAction *action, void *data)
+static void menu_cb_connect(GSimpleAction *action, GVariant *variant, gpointer data)
 {
     struct spice_connection *conn;
 
@@ -255,21 +265,21 @@ static void menu_cb_connect(GtkAction *action, void *data)
     connection_connect(conn);
 }
 
-static void menu_cb_close(GtkAction *action, void *data)
+static void menu_cb_close(GSimpleAction *action, GVariant *variant, gpointer data)
 {
     SpiceWindow *win = data;
 
     connection_disconnect(win->conn);
 }
 
-static void menu_cb_copy(GtkAction *action, void *data)
+static void menu_cb_copy(GSimpleAction *action, GVariant *variant, gpointer data)
 {
     SpiceWindow *win = data;
 
     spice_gtk_session_copy_to_guest(win->conn->gtk_session);
 }
 
-static void menu_cb_paste(GtkAction *action, void *data)
+static void menu_cb_paste(GSimpleAction *action, GVariant *variant, gpointer data)
 {
     SpiceWindow *win = data;
 
@@ -291,7 +301,7 @@ static void window_set_fullscreen(SpiceWindow *win, gboolean fs)
     }
 }
 
-static void menu_cb_fullscreen(GtkAction *action, void *data)
+static void menu_cb_fullscreen(GSimpleAction *action, GVariant *variant, gpointer data)
 {
     SpiceWindow *win = data;
 
@@ -302,7 +312,7 @@ static void menu_cb_fullscreen(GtkAction *action, void *data)
 static void enable_smartcard_actions(SpiceWindow *win, VReader *reader,
                                      gboolean can_insert, gboolean can_remove)
 {
-    GtkAction *action;
+    GAction *action;
 
     if ((reader != NULL) && (!spice_smartcard_reader_is_software((SpiceSmartcardReader*)reader)))
     {
@@ -312,12 +322,13 @@ static void enable_smartcard_actions(SpiceWindow *win, VReader *reader,
          */
         return;
     }
-    action = gtk_action_group_get_action(win->ag, "InsertSmartcard");
+    action = g_action_map_lookup_action(G_ACTION_MAP(win->ag), "InsertSmartcard");
     g_return_if_fail(action != NULL);
-    gtk_action_set_sensitive(action, can_insert);
-    action = gtk_action_group_get_action(win->ag, "RemoveSmartcard");
+    g_simple_action_set_enabled(G_SIMPLE_ACTION(action), can_insert);
+
+    action = g_action_map_lookup_action(G_ACTION_MAP(win->ag), "RemoveSmartcard");
     g_return_if_fail(action != NULL);
-    gtk_action_set_sensitive(action, can_remove);
+    g_simple_action_set_enabled(G_SIMPLE_ACTION(action), can_remove);
 }
 
 
@@ -345,18 +356,18 @@ static void card_removed_cb(SpiceSmartcardManager *manager, VReader *reader,
     enable_smartcard_actions(user_data, reader, TRUE, FALSE);
 }
 
-static void menu_cb_insert_smartcard(GtkAction *action, void *data)
+static void menu_cb_insert_smartcard(GSimpleAction *action, GVariant *variant, gpointer data)
 {
     spice_smartcard_manager_insert_card(spice_smartcard_manager_get());
 }
 
-static void menu_cb_remove_smartcard(GtkAction *action, void *data)
+static void menu_cb_remove_smartcard(GSimpleAction *action, GVariant *variant, gpointer data)
 {
     spice_smartcard_manager_remove_card(spice_smartcard_manager_get());
 }
 #endif
 
-static void menu_cb_mouse_mode(GtkAction *action, void *data)
+static void menu_cb_mouse_mode(GSimpleAction *action, GVariant *variant, gpointer data)
 {
     SpiceWindow *win = data;
     SpiceMainChannel *cmain = win->conn->main;
@@ -377,7 +388,7 @@ static void remove_cb(GtkContainer *container, GtkWidget *widget, void *data)
     gtk_window_resize(GTK_WINDOW(data), 1, 1);
 }
 
-static void menu_cb_select_usb_devices(GtkAction *action, void *data)
+static void menu_cb_select_usb_devices(GSimpleAction *action, GVariant *variant, gpointer data)
 {
     GtkWidget *dialog, *area, *usb_device_widget;
     SpiceWindow *win = data;
@@ -412,14 +423,14 @@ static void menu_cb_select_usb_devices(GtkAction *action, void *data)
 }
 #endif
 
-static void menu_cb_bool_prop(GtkToggleAction *action, gpointer data)
+static void menu_cb_bool_prop(GSimpleAction *action, GVariant *variant, gpointer data)
 {
     SpiceWindow *win = data;
-    gboolean state = gtk_toggle_action_get_active(action);
+    gboolean state = g_variant_get_boolean(variant);
     const char *name;
     gpointer object;
 
-    name = gtk_action_get_name(GTK_ACTION(action));
+    name = g_action_get_name(G_ACTION(action));
     SPICE_DEBUG("%s: %s = %s", __FUNCTION__, name, state ? "yes" : "no");
 
     g_key_file_set_boolean(keyfile, "general", name, state);
@@ -430,6 +441,7 @@ static void menu_cb_bool_prop(GtkToggleAction *action, gpointer data)
         object = win->spice;
     }
     g_object_set(object, name, state, NULL);
+    g_simple_action_set_state(action, variant);
 }
 
 static void menu_cb_conn_bool_prop_changed(GObject    *gobject,
@@ -438,33 +450,35 @@ static void menu_cb_conn_bool_prop_changed(GObject    *gobject,
 {
     SpiceWindow *win = user_data;
     const gchar *property = g_param_spec_get_name(pspec);
-    GtkAction *toggle;
+    GAction *toggle;
     gboolean state;
 
-    toggle = gtk_action_group_get_action(win->ag, property);
+    toggle = g_action_map_lookup_action(G_ACTION_MAP(win->ag), property);
     g_object_get(win->conn->gtk_session, property, &state, NULL);
-    gtk_toggle_action_set_active(GTK_TOGGLE_ACTION(toggle), state);
+    g_simple_action_set_state(G_SIMPLE_ACTION(toggle), g_variant_new_boolean(state));
 }
 
-static void menu_cb_toolbar(GtkToggleAction *action, gpointer data)
+static void menu_cb_toolbar(GSimpleAction *action, GVariant *variant, gpointer data)
 {
     SpiceWindow *win = data;
-    gboolean state = gtk_toggle_action_get_active(action);
+    gboolean state = g_variant_get_boolean(variant);
 
     gtk_widget_set_visible(win->toolbar, state);
     g_key_file_set_boolean(keyfile, "ui", "toolbar", state);
+    g_simple_action_set_state(action, variant);
 }
 
-static void menu_cb_statusbar(GtkToggleAction *action, gpointer data)
+static void menu_cb_statusbar(GSimpleAction *action, GVariant *variant, gpointer data)
 {
     SpiceWindow *win = data;
-    gboolean state = gtk_toggle_action_get_active(action);
+    gboolean state = g_variant_get_boolean(variant);
 
     gtk_widget_set_visible(win->statusbar, state);
     g_key_file_set_boolean(keyfile, "ui", "statusbar", state);
+    g_simple_action_set_state(action, variant);
 }
 
-static void menu_cb_about(GtkAction *action, void *data)
+static void menu_cb_about(GSimpleAction *action, GVariant *variant, gpointer data)
 {
     char *comments = "gtk test client app for the\n"
         "spice remote desktop protocol";
@@ -511,15 +525,20 @@ static gboolean window_state_cb(GtkWidget *widget, GdkEventWindowState *event,
             gtk_widget_grab_focus(win->spice);
         } else {
             gboolean state;
-            GtkAction *toggle;
+            GAction *toggle;
+            GVariant *variant;
             if (!hide_menu_bar) {
                 gtk_widget_show(win->menubar);
             }
-            toggle = gtk_action_group_get_action(win->ag, "Toolbar");
-            state = gtk_toggle_action_get_active(GTK_TOGGLE_ACTION(toggle));
+            toggle = g_action_map_lookup_action(G_ACTION_MAP(win->ag), "Toolbar");
+            variant = g_action_get_state(toggle);
+            state = g_variant_get_boolean(variant);
+            g_variant_unref(variant);
             gtk_widget_set_visible(win->toolbar, state);
-            toggle = gtk_action_group_get_action(win->ag, "Statusbar");
-            state = gtk_toggle_action_get_active(GTK_TOGGLE_ACTION(toggle));
+            toggle = g_action_map_lookup_action(G_ACTION_MAP(win->ag), "Statusbar");
+            variant = g_action_get_state(toggle);
+            state = g_variant_get_boolean(variant);
+            g_variant_unref(variant);
             gtk_widget_set_visible(win->statusbar, state);
         }
     }
@@ -567,7 +586,7 @@ static void keyboard_grab_cb(GtkWidget *widget, gint grabbed, gpointer data)
     }
 }
 
-static void menu_cb_resize_to(GtkAction *action G_GNUC_UNUSED,
+static void menu_cb_resize_to(GSimpleAction *action, GVariant *variant,
                               gpointer data)
 {
     SpiceWindow *win = data;
@@ -689,108 +708,38 @@ static void restore_configuration(SpiceWindow *win)
 
 /* ------------------------------------------------------------------ */
 
-static const GtkActionEntry entries[] = {
-    {
-        .name        = "FileMenu",
-        .label       = "_File",
-    },{
-        .name        = "FileRecentMenu",
-        .label       = "_Recent",
-    },{
-        .name        = "EditMenu",
-        .label       = "_Edit",
-    },{
-        .name        = "ViewMenu",
-        .label       = "_View",
-    },{
-        .name        = "InputMenu",
-        .label       = "_Input",
-    },{
-        .name        = "OptionMenu",
-        .label       = "_Options",
-    },{
-        .name        = "CompressionMenu",
-        .label       = "_Preferred image compression",
-    },{
-        .name        = "VideoCodecTypeMenu",
-        .label       = "_Preferred video codec type",
-    },{
-        .name        = "HelpMenu",
-        .label       = "_Help",
-    },{
-
-        /* File menu */
-        .name        = "Connect",
-        .stock_id    = "_Connect",
-        .label       = "_Connect ...",
-        .callback    = G_CALLBACK(menu_cb_connect),
-    },{
-        .name        = "Close",
-        .stock_id    = "window-close",
-        .label       = "_Close",
-        .callback    = G_CALLBACK(menu_cb_close),
-        .accelerator = "", /* none (disable default "<control>W") */
-    },{
-
-        /* Edit menu */
-        .name        = "CopyToGuest",
-        .stock_id    = "edit-copy",
-        .label       = "_Copy to guest",
-        .callback    = G_CALLBACK(menu_cb_copy),
-        .accelerator = "<shift>F5",
-    },{
-        .name        = "PasteFromGuest",
-        .stock_id    = "edit-paste",
-        .label       = "_Paste from guest",
-        .callback    = G_CALLBACK(menu_cb_paste),
-        .accelerator = "<shift>F6",
-    },{
-
-        /* View menu */
-        .name        = "Fullscreen",
-        .stock_id    = "view-fullscreen",
-        .label       = "_Fullscreen",
-        .callback    = G_CALLBACK(menu_cb_fullscreen),
-        .accelerator = "<shift>F11",
-    },{
-        .name        = "ResizeTo",
-        .label       = "_Resize to",
-        .callback    = G_CALLBACK(menu_cb_resize_to),
-        .accelerator = "",
-    },{
+static const GActionEntry entries[] = {
+    { .name = "Connect", .activate = menu_cb_connect },
+    { .name = "Close", .activate = menu_cb_close },
+    { .name = "CopyToGuest", .activate = menu_cb_copy },
+    { .name = "PasteFromGuest", .activate = menu_cb_paste },
+    { .name = "Fullscreen", .activate = menu_cb_fullscreen },
+    { .name = "ResizeTo", .activate = menu_cb_resize_to },
 #ifdef USE_SMARTCARD
-	.name        = "InsertSmartcard",
-	.label       = "_Insert Smartcard",
-	.callback    = G_CALLBACK(menu_cb_insert_smartcard),
-        .accelerator = "<shift>F8",
-    },{
-	.name        = "RemoveSmartcard",
-	.label       = "_Remove Smartcard",
-	.callback    = G_CALLBACK(menu_cb_remove_smartcard),
-        .accelerator = "<shift>F9",
-    },{
+    { .name = "InsertSmartcard", .activate = menu_cb_insert_smartcard },
+    { .name = "RemoveSmartcard", .activate = menu_cb_remove_smartcard },
 #endif
-
 #ifdef USE_USBREDIR
-        .name        = "SelectUsbDevices",
-        .label       = "_Select USB Devices for redirection",
-        .callback    = G_CALLBACK(menu_cb_select_usb_devices),
-        .accelerator = "<shift>F10",
-    },{
+    { .name = "SelectUsbDevices", .activate = menu_cb_select_usb_devices },
 #endif
+    { .name = "MouseMode", .activate = menu_cb_mouse_mode },
+    { .name = "About", .activate = menu_cb_about },
 
-        .name        = "MouseMode",
-        .label       = "Toggle _mouse mode",
-        .callback    = G_CALLBACK(menu_cb_mouse_mode),
-        .accelerator = "<shift>F7",
-
-    },{
-        /* Help menu */
-        .name        = "About",
-        .stock_id    = "help-about",
-        .label       = "_About ...",
-        .callback    = G_CALLBACK(menu_cb_about),
-    }
+    /* Toggle actions */
+    { .name = "grab-keyboard", .state = "false", .change_state = menu_cb_bool_prop },
+    { .name = "grab-mouse", .state = "false", .change_state = menu_cb_bool_prop },
+    { .name = "resize-guest", .state = "false", .change_state = menu_cb_bool_prop },
+    { .name = "scaling", .state = "false", .change_state = menu_cb_bool_prop },
+    { .name = "disable-inputs", .state = "false", .change_state = menu_cb_bool_prop },
+    { .name = "sync-modifiers", .state = "false", .change_state = menu_cb_bool_prop },
+    { .name = "auto-clipboard", .state = "false", .change_state = menu_cb_bool_prop },
+    { .name = "auto-usbredir", .state = "false", .change_state = menu_cb_bool_prop },
+    { .name = "Statusbar", .state = "true", .change_state = menu_cb_statusbar },
+    { .name = "Toolbar", .state = "true", .change_state = menu_cb_toolbar },
+    /* Radio actions */
+    { .name = "preferred-compression", .parameter_type = "s", .state = "'auto-glz'", .change_state = compression_cb },
+    { .name = "preferred-video-codec-type", .parameter_type = "s", .state = "'mjpeg'", .change_state = video_codec_type_cb },
+    { .name = "recent-item", .activate = recent_item_activated_cb, .parameter_type = "s" }
 };
 
 static const char *spice_display_properties[] = {
@@ -807,175 +756,212 @@ static const char *spice_gtk_session_properties[] = {
     "sync-modifiers",
 };
 
-static const GtkToggleActionEntry tentries[] = {
-    {
-        .name        = "grab-keyboard",
-        .label       = "Grab keyboard when active and focused",
-        .callback    = G_CALLBACK(menu_cb_bool_prop),
-    },{
-        .name        = "grab-mouse",
-        .label       = "Grab mouse in server mode (no tablet/vdagent)",
-        .callback    = G_CALLBACK(menu_cb_bool_prop),
-    },{
-        .name        = "resize-guest",
-        .label       = "Resize guest to match window size",
-        .callback    = G_CALLBACK(menu_cb_bool_prop),
-    },{
-        .name        = "scaling",
-        .label       = "Scale display",
-        .callback    = G_CALLBACK(menu_cb_bool_prop),
-    },{
-        .name        = "disable-inputs",
-        .label       = "Disable inputs",
-        .callback    = G_CALLBACK(menu_cb_bool_prop),
-    },{
-        .name        = "sync-modifiers",
-        .label       = "Sync modifiers",
-        .callback    = G_CALLBACK(menu_cb_bool_prop),
-    },{
-        .name        = "auto-clipboard",
-        .label       = "Automatic clipboard sharing between host and guest",
-        .callback    = G_CALLBACK(menu_cb_bool_prop),
-    },{
-        .name        = "auto-usbredir",
-        .label       = "Auto redirect newly plugged in USB devices",
-        .callback    = G_CALLBACK(menu_cb_bool_prop),
-    },{
-        .name        = "Statusbar",
-        .label       = "Statusbar",
-        .callback    = G_CALLBACK(menu_cb_statusbar),
-    },{
-        .name        = "Toolbar",
-        .label       = "Toolbar",
-        .callback    = G_CALLBACK(menu_cb_toolbar),
-    }
-};
+typedef struct {
+    const char *str;
+    gint value;
+} MenuMap;
 
-static const GtkRadioActionEntry compression_entries[] = {
-    {
-        .name  = "auto-glz",
-        .label = "auto-glz",
-        .value = SPICE_IMAGE_COMPRESSION_AUTO_GLZ,
-    },{
-        .name  = "auto-lz",
-        .label = "auto-lz",
-        .value = SPICE_IMAGE_COMPRESSION_AUTO_LZ,
-    },{
-        .name  = "quic",
-        .label = "quic",
-        .value = SPICE_IMAGE_COMPRESSION_QUIC,
-    },{
-        .name  = "glz",
-        .label = "glz",
-        .value = SPICE_IMAGE_COMPRESSION_GLZ,
-    },{
-        .name  = "lz",
-        .label = "lz",
-        .value = SPICE_IMAGE_COMPRESSION_LZ,
-    },{
+static const MenuMap compression_entries[] = {
+    { "auto-glz", SPICE_IMAGE_COMPRESSION_AUTO_GLZ },
+    { "auto-lz",  SPICE_IMAGE_COMPRESSION_AUTO_LZ },
+    { "quic",     SPICE_IMAGE_COMPRESSION_QUIC },
+    { "glz",      SPICE_IMAGE_COMPRESSION_GLZ },
+    { "lz",       SPICE_IMAGE_COMPRESSION_LZ },
 #ifdef USE_LZ4
-        .name  = "lz4",
-        .label = "lz4",
-        .value = SPICE_IMAGE_COMPRESSION_LZ4,
-    },{
+    { "lz4",      SPICE_IMAGE_COMPRESSION_LZ4 },
 #endif
-        .name  = "off",
-        .label = "off",
-        .value = SPICE_IMAGE_COMPRESSION_OFF,
-    }
+    { "off",      SPICE_IMAGE_COMPRESSION_OFF },
 };
 
-static const GtkRadioActionEntry video_codec_type_entries[] = {
-    {
-        .name  = "mjpeg",
-        .label = "mjpeg",
-        .value = SPICE_VIDEO_CODEC_TYPE_MJPEG,
-    },{
-        .name  = "vp8",
-        .label = "vp8",
-        .value = SPICE_VIDEO_CODEC_TYPE_VP8,
-    },{
-        .name  = "vp9",
-        .label = "vp9",
-        .value = SPICE_VIDEO_CODEC_TYPE_VP9,
-    },{
-        .name  = "h264",
-        .label = "h264",
-        .value = SPICE_VIDEO_CODEC_TYPE_H264,
-    }
+static const MenuMap video_codec_type_entries[] = {
+    { "mjpeg", SPICE_VIDEO_CODEC_TYPE_MJPEG },
+    { "vp8",   SPICE_VIDEO_CODEC_TYPE_VP8 },
+    { "vp9",   SPICE_VIDEO_CODEC_TYPE_VP9 },
+    { "h264",  SPICE_VIDEO_CODEC_TYPE_H264 },
 };
 
-static char ui_xml[] =
-"<ui>\n"
-"  <menubar action='MainMenu'>\n"
-"    <menu action='FileMenu'>\n"
-"      <menuitem action='Connect'/>\n"
-"      <menu action='FileRecentMenu'/>\n"
-"      <separator/>\n"
-"      <menuitem action='Close'/>\n"
-"    </menu>\n"
-"    <menu action='EditMenu'>\n"
-"      <menuitem action='CopyToGuest'/>\n"
-"      <menuitem action='PasteFromGuest'/>\n"
-"    </menu>\n"
-"    <menu action='ViewMenu'>\n"
-"      <menuitem action='Fullscreen'/>\n"
-"      <menuitem action='Toolbar'/>\n"
-"      <menuitem action='Statusbar'/>\n"
-"    </menu>\n"
-"    <menu action='InputMenu'>\n"
+static const char ui_xml[] =
+"<interface>\n"
+"  <menu id='main-menu'>\n"
+"    <submenu>\n"
+"      <attribute name='label' translatable='yes'>File</attribute>\n"
+"      <section>\n"
+"        <item>\n"
+"          <attribute name='label' translatable='yes'>Connect ...</attribute>\n"
+"          <attribute name='action'>win.Connect</attribute>\n"
+"        </item>\n"
+"      </section>\n"
+"      <section id='file-recent-section'/>\n"
+"      <section>\n"
+"        <item>\n"
+"          <attribute name='label' translatable='yes'>Close</attribute>\n"
+"          <attribute name='action'>win.Close</attribute>\n"
+"        </item>\n"
+"      </section>\n"
+"    </submenu>\n"
+"    <submenu>\n"
+"      <attribute name='label' translatable='yes'>Edit</attribute>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>Copy to guest</attribute>\n"
+"        <attribute name='action'>win.CopyToGuest</attribute>\n"
+"        <attribute name='accel'>&lt;Shift&gt;F5</attribute>\n"
+"      </item>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>Paste from guest</attribute>\n"
+"        <attribute name='action'>win.PasteFromGuest</attribute>\n"
+"        <attribute name='accel'>&lt;Shift&gt;F6</attribute>\n"
+"      </item>\n"
+"    </submenu>\n"
+"    <submenu>\n"
+"      <attribute name='label' translatable='yes'>View</attribute>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>Fullscreen</attribute>\n"
+"        <attribute name='action'>win.Fullscreen</attribute>\n"
+"        <attribute name='accel'>&lt;Shift&gt;F11</attribute>\n"
+"      </item>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>Toolbar</attribute>\n"
+"        <attribute name='action'>win.Toolbar</attribute>\n"
+"      </item>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>Statusbar</attribute>\n"
+"        <attribute name='action'>win.Statusbar</attribute>\n"
+"      </item>\n"
+"    </submenu>\n"
+"    <submenu>\n"
+"      <attribute name='label' translatable='yes'>Input</attribute>\n"
 #ifdef USE_SMARTCARD
-"      <menuitem action='InsertSmartcard'/>\n"
-"      <menuitem action='RemoveSmartcard'/>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>Insert Smartcard</attribute>\n"
+"        <attribute name='action'>win.InsertSmartcard</attribute>\n"
+"        <attribute name='accel'>&lt;Shift&gt;F8</attribute>\n"
+"      </item>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>Remove Smartcard</attribute>\n"
+"        <attribute name='action'>win.RemoveSmartcard</attribute>\n"
+"        <attribute name='accel'>&lt;Shift&gt;F9</attribute>\n"
+"      </item>\n"
 #endif
 #ifdef USE_USBREDIR
-"      <menuitem action='SelectUsbDevices'/>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>Select USB Devices for redirection</attribute>\n"
+"        <attribute name='action'>win.SelectUsbDevices</attribute>\n"
+"        <attribute name='accel'>&lt;Shift&gt;F10</attribute>\n"
+"      </item>\n"
 #endif
-"    </menu>\n"
-"    <menu action='OptionMenu'>\n"
-"      <menuitem action='grab-keyboard'/>\n"
-"      <menuitem action='grab-mouse'/>\n"
-"      <menuitem action='MouseMode'/>\n"
-"      <menuitem action='resize-guest'/>\n"
-"      <menuitem action='scaling'/>\n"
-"      <menuitem action='disable-inputs'/>\n"
-"      <menuitem action='sync-modifiers'/>\n"
-"      <menuitem action='auto-clipboard'/>\n"
-"      <menuitem action='auto-usbredir'/>\n"
-"      <menu action='CompressionMenu'>\n"
-"        <menuitem action='auto-glz'/>\n"
-"        <menuitem action='auto-lz'/>\n"
-"        <menuitem action='quic'/>\n"
-"        <menuitem action='glz'/>\n"
-"        <menuitem action='lz'/>\n"
+"    </submenu>\n"
+"    <submenu>\n"
+"      <attribute name='label' translatable='yes'>Options</attribute>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>Grab keyboard when active and focused</attribute>\n"
+"        <attribute name='action'>win.grab-keyboard</attribute>\n"
+"      </item>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>Grab mouse in server mode (no tablet/vdagent)</attribute>\n"
+"        <attribute name='action'>win.grab-mouse</attribute>\n"
+"      </item>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>Toggle mouse mode</attribute>\n"
+"        <attribute name='action'>win.MouseMode</attribute>\n"
+"        <attribute name='accel'>&lt;Shift&gt;F7</attribute>\n"
+"      </item>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>Resize guest to match window size</attribute>\n"
+"        <attribute name='action'>win.resize-guest</attribute>\n"
+"      </item>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>Scale display</attribute>\n"
+"        <attribute name='action'>win.scaling</attribute>\n"
+"      </item>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>Disable inputs</attribute>\n"
+"        <attribute name='action'>win.disable-inputs</attribute>\n"
+"      </item>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>Sync modifiers</attribute>\n"
+"        <attribute name='action'>win.sync-modifiers</attribute>\n"
+"      </item>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>Automatic clipboard sharing between host and guest</attribute>\n"
+"        <attribute name='action'>win.auto-clipboard</attribute>\n"
+"      </item>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>Auto redirect newly plugged in USB devices</attribute>\n"
+"        <attribute name='action'>win.auto-usbredir</attribute>\n"
+"      </item>\n"
+"      <submenu id='compression-menu'>\n"
+"        <attribute name='label' translatable='yes'>Preferred image compression</attribute>\n"
+"        <item>\n"
+"          <attribute name='label'>auto-glz</attribute>\n"
+"          <attribute name='action'>win.preferred-compression</attribute>\n"
+"          <attribute name='target'>auto-glz</attribute>\n"
+"        </item>\n"
+"        <item>\n"
+"          <attribute name='label'>auto-lz</attribute>\n"
+"          <attribute name='action'>win.preferred-compression</attribute>\n"
+"          <attribute name='target'>auto-lz</attribute>\n"
+"        </item>\n"
+"        <item>\n"
+"          <attribute name='label'>quic</attribute>\n"
+"          <attribute name='action'>win.preferred-compression</attribute>\n"
+"          <attribute name='target'>quic</attribute>\n"
+"        </item>\n"
+"        <item>\n"
+"          <attribute name='label'>glz</attribute>\n"
+"          <attribute name='action'>win.preferred-compression</attribute>\n"
+"          <attribute name='target'>glz</attribute>\n"
+"        </item>\n"
+"        <item>\n"
+"          <attribute name='label'>lz</attribute>\n"
+"          <attribute name='action'>win.preferred-compression</attribute>\n"
+"          <attribute name='target'>lz</attribute>\n"
+"        </item>\n"
 #ifdef USE_LZ4
-"        <menuitem action='lz4'/>\n"
+"        <item>\n"
+"          <attribute name='label'>lz4</attribute>\n"
+"          <attribute name='action'>win.preferred-compression</attribute>\n"
+"          <attribute name='target'>lz4</attribute>\n"
+"        </item>\n"
 #endif
-"        <menuitem action='off'/>\n"
-"      </menu>\n"
-"      <menu action='VideoCodecTypeMenu'>\n"
-"        <menuitem action='mjpeg'/>\n"
-"        <menuitem action='vp8'/>\n"
-"        <menuitem action='vp9'/>\n"
-"        <menuitem action='h264'/>\n"
-"      </menu>\n"
-"    </menu>\n"
-"    <menu action='HelpMenu'>\n"
-"      <menuitem action='About'/>\n"
-"    </menu>\n"
-"  </menubar>\n"
-"  <toolbar action='ToolBar'>\n"
-"    <toolitem action='Close'/>\n"
-"    <separator/>\n"
-"    <toolitem action='CopyToGuest'/>\n"
-"    <toolitem action='PasteFromGuest'/>\n"
-"    <separator/>\n"
-"    <toolitem action='Fullscreen'/>\n"
-"    <separator/>\n"
-"    <toolitem action='ResizeTo'/>\n"
-"    <separator/>\n"
-"  </toolbar>\n"
-"</ui>\n";
+"        <item>\n"
+"          <attribute name='label'>off</attribute>\n"
+"          <attribute name='action'>win.preferred-compression</attribute>\n"
+"          <attribute name='target'>off</attribute>\n"
+"        </item>\n"
+"      </submenu>\n"
+"      <submenu id='video-codec-type-menu'>\n"
+"        <attribute name='label' translatable='yes'>Preferred video codec type</attribute>\n"
+"        <item>\n"
+"          <attribute name='label'>mjpeg</attribute>\n"
+"          <attribute name='action'>win.preferred-video-codec-type</attribute>\n"
+"          <attribute name='target'>mjpeg</attribute>\n"
+"        </item>\n"
+"        <item>\n"
+"          <attribute name='label'>vp8</attribute>\n"
+"          <attribute name='action'>win.preferred-video-codec-type</attribute>\n"
+"          <attribute name='target'>vp8</attribute>\n"
+"        </item>\n"
+"        <item>\n"
+"          <attribute name='label'>vp9</attribute>\n"
+"          <attribute name='action'>win.preferred-video-codec-type</attribute>\n"
+"          <attribute name='target'>vp9</attribute>\n"
+"        </item>\n"
+"        <item>\n"
+"          <attribute name='label'>h264</attribute>\n"
+"          <attribute name='action'>win.preferred-video-codec-type</attribute>\n"
+"          <attribute name='target'>h264</attribute>\n"
+"        </item>\n"
+"      </submenu>\n"
+"    </submenu>\n"
+"    <submenu>\n"
+"      <attribute name='label' translatable='yes'>Help</attribute>\n"
+"      <item>\n"
+"        <attribute name='label' translatable='yes'>About ...</attribute>\n"
+"        <attribute name='action'>win.About</attribute>\n"
+"      </item>\n"
+"    </submenu>\n"
+"  </menu>\n"
+"</interface>\n";
 
 static gboolean is_gtk_session_property(const gchar *property)
 {
@@ -989,39 +975,60 @@ static gboolean is_gtk_session_property(const gchar *property)
     return FALSE;
 }
 
-static void recent_item_activated_cb(GtkRecentChooser *chooser, gpointer data)
+static void recent_item_activated_cb(GSimpleAction *chooser,
+                                     GVariant *variant,
+ gpointer data)
 {
-    GtkRecentInfo *info;
     struct spice_connection *conn;
     const char *uri;
-
-    info = gtk_recent_chooser_get_current_item(chooser);
-
-    uri = gtk_recent_info_get_uri(info);
-    g_return_if_fail(uri != NULL);
-
+    
+    uri = g_variant_get_string(variant, NULL);
     conn = connection_new();
     g_object_set(conn->session, "uri", uri, NULL);
-    gtk_recent_info_unref(info);
     connection_connect(conn);
 }
 
-static void compression_cb(GtkRadioAction *action G_GNUC_UNUSED,
-                           GtkRadioAction *current,
+static void compression_cb(GSimpleAction *action,
+                           GVariant *variant,
                            gpointer user_data)
 {
-    spice_display_channel_change_preferred_compression(SPICE_CHANNEL(user_data),
-                                                       gtk_radio_action_get_current_value(current));
+    SpiceWindow *win = user_data;
+    const char *comp_str = g_variant_get_string(variant, NULL);
+    gint comp = SPICE_IMAGE_COMPRESSION_INVALID;
+    guint i;
+
+    for (i = 0; i < G_N_ELEMENTS(compression_entries); i++) {
+        if (g_str_equal(comp_str, compression_entries[i].str)) {
+            comp = compression_entries[i].value;
+            break;
+        }
+    }
+    g_simple_action_set_state(action, variant);
+    g_key_file_set_string(keyfile, "general", "preferred-compression", comp_str);
+
+    spice_display_channel_change_preferred_compression(SPICE_CHANNEL(win->display_channel),
+                                                       comp);
 }
 
-static void video_codec_type_cb(GtkRadioAction *action G_GNUC_UNUSED,
-                                GtkRadioAction *current,
+static void video_codec_type_cb(GSimpleAction *action,
+                                GVariant *variant,
                                 gpointer user_data)
 {
+    SpiceWindow *win = user_data;
     static GArray *preferred_codecs = NULL;
-    gint selected_codec = gtk_radio_action_get_current_value(current);
+    const char *codec_str = g_variant_get_string(variant, NULL);
+    gint selected_codec;
     guint i;
     GError *err = NULL;
+
+    for (i = 0; i < G_N_ELEMENTS(video_codec_type_entries); i++) {
+        if (g_str_equal(codec_str, video_codec_type_entries[i].str)) {
+            selected_codec = video_codec_type_entries[i].value;
+            break;
+        }
+    }
+    g_simple_action_set_state(action, variant);
+    g_key_file_set_string(keyfile, "general", "preferred-video-codec-type", codec_str);
 
     if (!preferred_codecs) {
         preferred_codecs = g_array_sized_new(FALSE, FALSE,
@@ -1041,7 +1048,7 @@ static void video_codec_type_cb(GtkRadioAction *action G_GNUC_UNUSED,
     g_array_remove_index(preferred_codecs, i);
     g_array_prepend_val(preferred_codecs, selected_codec);
 
-    if (!spice_display_channel_change_preferred_video_codec_types(SPICE_CHANNEL(user_data),
+    if (!spice_display_channel_change_preferred_video_codec_types(SPICE_CHANNEL(win->display_channel),
                                                                   (gint *) preferred_codecs->data,
                                                                   preferred_codecs->len, &err)) {
         g_warning("setting preferred video codecs failed: %s", err->message);
@@ -1063,7 +1070,7 @@ static SpiceWindow *create_spice_window(spice_connection *conn, SpiceChannel *ch
 {
     char title[32];
     SpiceWindow *win;
-    GtkAction *toggle;
+    GAction *toggle;
     gboolean state;
     GtkWidget *vbox, *frame;
     GError *err = NULL;
@@ -1090,61 +1097,97 @@ static SpiceWindow *create_spice_window(spice_connection *conn, SpiceChannel *ch
     g_signal_connect(G_OBJECT(win->toplevel), "delete-event",
                      G_CALLBACK(delete_cb), win);
 
-    /* menu + toolbar */
-    win->ui = gtk_ui_manager_new();
-    win->ag = gtk_action_group_new("MenuActions");
-    gtk_action_group_add_actions(win->ag, entries, G_N_ELEMENTS(entries), win);
-    gtk_action_group_add_toggle_actions(win->ag, tentries,
-                                        G_N_ELEMENTS(tentries), win);
-    gtk_action_group_add_radio_actions(win->ag, compression_entries,
-                                       G_N_ELEMENTS(compression_entries), -1,
-                                       G_CALLBACK(compression_cb), win->display_channel);
+    /* menu */
+    win->ag = g_simple_action_group_new();
+    g_action_map_add_action_entries(G_ACTION_MAP(win->ag), entries, G_N_ELEMENTS(entries), win);
     if (!spice_channel_test_capability(win->display_channel, SPICE_DISPLAY_CAP_PREF_COMPRESSION)) {
-        GtkAction *compression_menu_action = gtk_action_group_get_action(win->ag, "CompressionMenu");
-        gtk_action_set_sensitive(compression_menu_action, FALSE);
+        GAction *compression_menu_action = g_action_map_lookup_action(G_ACTION_MAP(win->ag), "CompressionMenu");
+        g_simple_action_set_enabled(G_SIMPLE_ACTION(compression_menu_action), FALSE);
     }
-    gtk_action_group_add_radio_actions(win->ag, video_codec_type_entries,
-                                       G_N_ELEMENTS(video_codec_type_entries), -1,
-                                       G_CALLBACK(video_codec_type_cb), win->display_channel);
     if (!spice_channel_test_capability(win->display_channel,
                                        SPICE_DISPLAY_CAP_PREF_VIDEO_CODEC_TYPE)) {
-        GtkAction *video_codec_type_menu_action =
-            gtk_action_group_get_action(win->ag, "VideoCodecTypeMenu");
-        gtk_action_set_sensitive(video_codec_type_menu_action, FALSE);
+        GAction *video_codec_type_menu_action =
+            g_action_map_lookup_action(G_ACTION_MAP(win->ag), "VideoCodecTypeMenu");
+        g_simple_action_set_enabled(G_SIMPLE_ACTION(video_codec_type_menu_action), FALSE);
     }
 
-    gtk_ui_manager_insert_action_group(win->ui, win->ag, 0);
-    gtk_window_add_accel_group(GTK_WINDOW(win->toplevel),
-                               gtk_ui_manager_get_accel_group(win->ui));
+    gtk_widget_insert_action_group(win->toplevel, "win", G_ACTION_GROUP(win->ag));
+    win->ui = gtk_builder_new();
 
-    err = NULL;
-    if (!gtk_ui_manager_add_ui_from_string(win->ui, ui_xml, -1, &err)) {
+    if (!gtk_builder_add_from_string(win->ui, ui_xml, -1, &err)) {
         g_warning("building menus failed: %s", err->message);
         g_error_free(err);
         exit(1);
     }
     if (!hide_menu_bar) {
-        win->menubar = gtk_ui_manager_get_widget(win->ui, "/MainMenu");
+        GMenuModel *menu_model = G_MENU_MODEL(gtk_builder_get_object(win->ui, "main-menu"));
+        win->menubar = gtk_menu_bar_new_from_model(menu_model);
     }
-    win->toolbar = gtk_ui_manager_get_widget(win->ui, "/ToolBar");
 
     /* recent menu */
-    win->ritem  = gtk_ui_manager_get_widget
-        (win->ui, "/MainMenu/FileMenu/FileRecentMenu");
+    GMenu *recent_section = G_MENU(gtk_builder_get_object(win->ui, "file-recent-section"));
+    if (recent_section) {
+        GMenu *recent_menu = g_menu_new();
+        GtkRecentManager *manager = gtk_recent_manager_get_default();
+        GList *items = gtk_recent_manager_get_items(manager);
+        GList *l;
 
-    GtkRecentFilter  *rfilter;
+        for (l = items; l != NULL; l = l->next) {
+            GtkRecentInfo *info = l->data;
+            const gchar *mime_type = gtk_recent_info_get_mime_type(info);
 
-    win->rmenu = gtk_recent_chooser_menu_new();
-    gtk_recent_chooser_set_show_icons(GTK_RECENT_CHOOSER(win->rmenu), FALSE);
-    rfilter = gtk_recent_filter_new();
-    gtk_recent_filter_add_mime_type(rfilter, "application/x-spice");
-    gtk_recent_chooser_add_filter(GTK_RECENT_CHOOSER(win->rmenu), rfilter);
-    gtk_recent_chooser_set_local_only(GTK_RECENT_CHOOSER(win->rmenu), FALSE);
-    gtk_menu_item_set_submenu(GTK_MENU_ITEM(win->ritem), win->rmenu);
-    g_signal_connect(win->rmenu, "item-activated",
-                     G_CALLBACK(recent_item_activated_cb), win);
+            if (mime_type && g_str_equal(mime_type, "application/x-spice")) {
+                const gchar *uri = gtk_recent_info_get_uri(info);
+                const gchar *name = gtk_recent_info_get_display_name(info);
 
-    /* spice display */
+                GMenuItem *item = g_menu_item_new(name, NULL);
+                g_menu_item_set_action_and_target(item, "win.recent-item", "s", uri);
+                g_menu_append_item(recent_menu, item);
+                g_object_unref(item);
+            }
+        }
+
+        g_list_free_full(items, (GDestroyNotify)gtk_recent_info_unref);
+
+        g_menu_append_submenu(recent_section, "Recent Files", G_MENU_MODEL(recent_menu));
+        g_object_unref(recent_menu);
+    }
+
+    /* toolbar */
+    GtkWidget *button;
+    GtkStyleContext *context;
+
+    win->toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    context = gtk_widget_get_style_context(win->toolbar);
+    gtk_style_context_add_class(context, "toolbar");
+
+    button = gtk_button_new_from_icon_name("window-close", GTK_ICON_SIZE_BUTTON);
+    gtk_actionable_set_action_name(GTK_ACTIONABLE(button), "win.Close");
+    gtk_container_add(GTK_CONTAINER(win->toolbar), button);
+
+    gtk_container_add(GTK_CONTAINER(win->toolbar), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
+
+    button = gtk_button_new_from_icon_name("edit-copy", GTK_ICON_SIZE_BUTTON);
+    gtk_actionable_set_action_name(GTK_ACTIONABLE(button), "win.CopyToGuest");
+    gtk_container_add(GTK_CONTAINER(win->toolbar), button);
+
+    button = gtk_button_new_from_icon_name("edit-paste", GTK_ICON_SIZE_BUTTON);
+    gtk_actionable_set_action_name(GTK_ACTIONABLE(button), "win.PasteFromGuest");
+    gtk_container_add(GTK_CONTAINER(win->toolbar), button);
+
+    gtk_container_add(GTK_CONTAINER(win->toolbar), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
+
+    button = gtk_button_new_from_icon_name("view-fullscreen", GTK_ICON_SIZE_BUTTON);
+    gtk_actionable_set_action_name(GTK_ACTIONABLE(button), "win.Fullscreen");
+    gtk_container_add(GTK_CONTAINER(win->toolbar), button);
+
+    gtk_container_add(GTK_CONTAINER(win->toolbar), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
+
+    button = gtk_button_new_with_label("Resize to");
+    gtk_actionable_set_action_name(GTK_ACTIONABLE(button), "win.ResizeTo");
+    gtk_container_add(GTK_CONTAINER(win->toolbar), button);
+
+/* spice display */
     win->spice = GTK_WIDGET(spice_display_new_with_monitor(conn->session, id, monitor_id));
     seq = spice_grab_sequence_new_from_string("Shift_L+F12");
     spice_display_set_grab_keys(SPICE_DISPLAY(win->spice), seq);
@@ -1161,8 +1204,12 @@ static SpiceWindow *create_spice_window(spice_connection *conn, SpiceChannel *ch
     win->statusbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 1);
 
     win->status = gtk_label_new("status line");
-    gtk_misc_set_alignment(GTK_MISC(win->status), 0, 0.5);
-    gtk_misc_set_padding(GTK_MISC(win->status), 3, 1);
+    gtk_widget_set_halign(win->status, GTK_ALIGN_START);
+    gtk_widget_set_valign(win->status, GTK_ALIGN_CENTER);
+    gtk_widget_set_margin_start(win->status, 3);
+    gtk_widget_set_margin_end(win->status, 3);
+    gtk_widget_set_margin_top(win->status, 1);
+    gtk_widget_set_margin_bottom(win->status, 1);
     update_status_window(win);
 
     frame = gtk_frame_new(NULL);
@@ -1195,20 +1242,20 @@ static SpiceWindow *create_spice_window(spice_connection *conn, SpiceChannel *ch
 
     /* init toggle actions */
     for (i = 0; i < G_N_ELEMENTS(spice_display_properties); i++) {
-        toggle = gtk_action_group_get_action(win->ag,
-                                             spice_display_properties[i]);
+        toggle = g_action_map_lookup_action(G_ACTION_MAP(win->ag),
+                                            spice_display_properties[i]);
         g_object_get(win->spice, spice_display_properties[i], &state, NULL);
-        gtk_toggle_action_set_active(GTK_TOGGLE_ACTION(toggle), state);
+        g_simple_action_set_state(G_SIMPLE_ACTION(toggle), g_variant_new_boolean(state));
     }
 
     for (i = 0; i < G_N_ELEMENTS(spice_gtk_session_properties); i++) {
         char notify[64];
 
-        toggle = gtk_action_group_get_action(win->ag,
-                                             spice_gtk_session_properties[i]);
+        toggle = g_action_map_lookup_action(G_ACTION_MAP(win->ag),
+                                            spice_gtk_session_properties[i]);
         g_object_get(win->conn->gtk_session, spice_gtk_session_properties[i],
                      &state, NULL);
-        gtk_toggle_action_set_active(GTK_TOGGLE_ACTION(toggle), state);
+        g_simple_action_set_state(G_SIMPLE_ACTION(toggle), g_variant_new_boolean(state));
 
         snprintf(notify, sizeof(notify), "notify::%s",
                  spice_gtk_session_properties[i]);
@@ -1219,13 +1266,13 @@ static SpiceWindow *create_spice_window(spice_connection *conn, SpiceChannel *ch
 
     update_edit_menu_window(win);
 
-    toggle = gtk_action_group_get_action(win->ag, "Toolbar");
+    toggle = g_action_map_lookup_action(G_ACTION_MAP(win->ag), "Toolbar");
     state = gtk_widget_get_visible(win->toolbar);
-    gtk_toggle_action_set_active(GTK_TOGGLE_ACTION(toggle), state);
+    g_simple_action_set_state(G_SIMPLE_ACTION(toggle), g_variant_new_boolean(state));
 
-    toggle = gtk_action_group_get_action(win->ag, "Statusbar");
+    toggle = g_action_map_lookup_action(G_ACTION_MAP(win->ag), "Statusbar");
     state = gtk_widget_get_visible(win->statusbar);
-    gtk_toggle_action_set_active(GTK_TOGGLE_ACTION(toggle), state);
+    g_simple_action_set_state(G_SIMPLE_ACTION(toggle), g_variant_new_boolean(state));
 
 #ifdef USE_SMARTCARD
     gboolean smartcard;
@@ -1247,8 +1294,8 @@ static SpiceWindow *create_spice_window(spice_connection *conn, SpiceChannel *ch
 #endif
 
 #ifndef USE_USBREDIR
-    GtkAction *usbredir = gtk_action_group_get_action(win->ag, "auto-usbredir");
-    gtk_action_set_visible(usbredir, FALSE);
+    GAction *usbredir = g_action_map_lookup_action(G_ACTION_MAP(win->ag), "auto-usbredir");
+    g_simple_action_set_enabled(G_SIMPLE_ACTION(usbredir), FALSE);
 #endif
 
     gtk_widget_grab_focus(win->spice);
@@ -1423,7 +1470,7 @@ static void update_auto_usbredir_sensitive(spice_connection *conn)
 {
 #ifdef USE_USBREDIR
     int i;
-    GtkAction *ac;
+    GAction *ac;
     gboolean sensitive;
 
     sensitive = spice_session_has_channel_type(conn->session,
@@ -1431,8 +1478,8 @@ static void update_auto_usbredir_sensitive(spice_connection *conn)
     for (i = 0; i < SPICE_N_ELEMENTS(conn->wins); i++) {
         if (conn->wins[i] == NULL)
             continue;
-        ac = gtk_action_group_get_action(conn->wins[i]->ag, "auto-usbredir");
-        gtk_action_set_sensitive(ac, sensitive);
+        ac = g_action_map_lookup_action(G_ACTION_MAP(conn->wins[i]->ag), "auto-usbredir");
+        g_simple_action_set_enabled(G_SIMPLE_ACTION(ac), sensitive);
     }
 #endif
 }
