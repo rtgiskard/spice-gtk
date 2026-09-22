@@ -262,6 +262,7 @@ static gboolean update_mmtime_timeout_cb(gpointer data)
     SpiceGstaudioPrivate *p = gstaudio->priv;
     GstQuery *q;
 
+    g_return_val_if_fail(p->playback.pipe != NULL, FALSE);
     g_return_val_if_fail(!p->playback.fake, TRUE);
 
     q = gst_query_new_latency();
@@ -316,8 +317,11 @@ static void playback_start(SpicePlaybackChannel *channel, gint format, gint chan
         p->playback.channels = channels;
 
 cleanup:
-        if (error != NULL)
+        if (error != NULL) {
             g_clear_pointer(&p->playback.pipe, gst_object_unref);
+            g_clear_pointer(&p->playback.src, gst_object_unref);
+            g_clear_pointer(&p->playback.sink, gst_object_unref);
+        }
         g_clear_error(&error);
         g_free(audio_caps);
         g_free(pipeline);
@@ -341,6 +345,7 @@ static void playback_data(SpicePlaybackChannel *channel,
     GstBuffer *buf;
 
     g_return_if_fail(p != NULL);
+    g_return_if_fail(p->playback.src != NULL);
 
     audio = g_memdup2(audio, size); /* TODO: try to avoid memory copy */
     buf = gst_buffer_new_wrapped(audio, size);
