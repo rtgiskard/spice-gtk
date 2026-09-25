@@ -26,16 +26,6 @@
 #include "spice-widget-priv.h"
 #include "spice-gtk-session-priv.h"
 
-#ifdef GDK_WINDOWING_X11
-#include <gdk/gdkx.h>
-#endif
-#ifdef GDK_WINDOWING_WAYLAND
-#include <gdk/gdkwayland.h>
-#endif
-#ifdef GDK_WINDOWING_WIN32
-#include <gdk/gdkwin32.h>
-#endif
-
 #define VERTS_ARRAY_SIZE (sizeof(GLfloat) * 4 * 4)
 #define TEX_ARRAY_SIZE (sizeof(GLfloat) * 4 * 2)
 
@@ -184,100 +174,22 @@ G_GNUC_INTERNAL
 gboolean spice_egl_init(SpiceDisplay *display, GError **err)
 {
     SpiceDisplayPrivate *d = display->priv;
-    static const EGLint conf_att[] = {
-        EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
-        EGL_RED_SIZE, 8,
-        EGL_GREEN_SIZE, 8,
-        EGL_BLUE_SIZE, 8,
-        EGL_ALPHA_SIZE, 0,
-        EGL_NONE,
-    };
-    static const EGLint ctx_att[] = {
-#ifdef EGL_CONTEXT_MAJOR_VERSION
-        EGL_CONTEXT_MAJOR_VERSION, 3,
-#else
-        EGL_CONTEXT_CLIENT_VERSION, 3,
-#endif
-        EGL_NONE
-    };
-    EGLBoolean b;
-    EGLint major, minor, n;
-    EGLNativeDisplayType dpy = 0;
-    GdkDisplay *gdk_dpy = gdk_display_get_default();
 
-#ifdef GDK_WINDOWING_WAYLAND
-    if (GDK_IS_WAYLAND_DISPLAY(gdk_dpy)) {
-        d->egl.ctx = eglGetCurrentContext();
-        dpy = (EGLNativeDisplayType)gdk_wayland_display_get_wl_display(gdk_dpy);
-        d->egl.display = eglGetDisplay(dpy);
-        goto end;
-    }
-#endif
-#ifdef GDK_WINDOWING_X11
-    if (GDK_IS_X11_DISPLAY(gdk_dpy)) {
-        dpy = (EGLNativeDisplayType)gdk_x11_display_get_xdisplay(gdk_dpy);
-    }
-#endif
-#ifdef GDK_WINDOWING_WIN32
-    if (GDK_IS_WIN32_DISPLAY(gdk_dpy)) {
-        dpy = (EGLNativeDisplayType)EGL_DEFAULT_DISPLAY; /* or perhaps wglGetCurrentDC? */
-    }
-#endif
+    d->egl.ctx = eglGetCurrentContext();
+    d->egl.display = eglGetCurrentDisplay();
 
-    d->egl.display = eglGetDisplay(dpy);
-    if (d->egl.display == EGL_NO_DISPLAY) {
+    if (d->egl.ctx == EGL_NO_CONTEXT || d->egl.display == EGL_NO_DISPLAY) {
         g_set_error_literal(err, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
-                            "failed to get EGL display");
+                            "no current EGL context/display; is GTK using its EGL GL backend?");
         return FALSE;
     }
 
-    if (!eglInitialize(d->egl.display, &major, &minor)) {
-        g_set_error_literal(err, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
-                            "failed to init EGL display");
-        return FALSE;
-    }
-
-    SPICE_DEBUG("EGL major/minor: %d.%d\n", major, minor);
     SPICE_DEBUG("EGL version: %s\n",
                 eglQueryString(d->egl.display, EGL_VERSION));
     SPICE_DEBUG("EGL vendor: %s\n",
                 eglQueryString(d->egl.display, EGL_VENDOR));
     SPICE_DEBUG("EGL extensions: %s\n",
                 eglQueryString(d->egl.display, EGL_EXTENSIONS));
-
-    b = eglBindAPI(EGL_OPENGL_API);
-    if (!b) {
-        g_set_error_literal(err, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
-                            "cannot bind OpenGL API");
-        return FALSE;
-    }
-
-    b = eglChooseConfig(d->egl.display, conf_att, &d->egl.conf,
-                        1, &n);
-
-    if (!b || n != 1) {
-        g_set_error_literal(err, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
-                            "cannot find suitable EGL config");
-        return FALSE;
-    }
-
-    d->egl.ctx = eglCreateContext(d->egl.display,
-                                  d->egl.conf,
-                                  EGL_NO_CONTEXT,
-                                  ctx_att);
-    if (!d->egl.ctx) {
-        g_set_error_literal(err, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
-                            "cannot create EGL context");
-        return FALSE;
-    }
-
-    eglMakeCurrent(d->egl.display, EGL_NO_SURFACE, EGL_NO_SURFACE,
-                   d->egl.ctx);
-
-#ifdef GDK_WINDOWING_WAYLAND
-end:
-#endif
 
     if (!spice_egl_init_shaders(display, err))
         return FALSE;
@@ -294,136 +206,16 @@ end:
     return TRUE;
 }
 
-G_GNUC_INTERNAL
-void spice_egl_set_x11_window_visual(SpiceDisplay *display, GtkWidget *widget)
-{
-#ifdef GDK_WINDOWING_X11
-    SpiceDisplayPrivate *d = display->priv;
-    EGLint visual_id = 0;
-    GdkVisual *visual;
-
-    if (!GDK_IS_X11_DISPLAY(gdk_display_get_default()) ||
-        d->egl.display == EGL_NO_DISPLAY ||
-        d->egl.conf == NULL) {
-        return;
-    }
-
-    if (gtk_widget_get_realized(widget)) {
-        return;
-    }
-
-    if (eglGetConfigAttrib(d->egl.display, d->egl.conf,
-                           EGL_NATIVE_VISUAL_ID, &visual_id) != EGL_TRUE ||
-        visual_id == 0) {
-        return;
-    }
-
-    visual = gdk_x11_screen_lookup_visual(gtk_widget_get_screen(widget),
-                                          visual_id);
-    if (visual == NULL) {
-        g_warning("No GDK visual found for EGL native visual 0x%x", visual_id);
-        return;
-    }
-
-    gtk_widget_set_visual(widget, visual);
-#endif
-}
-
 static gboolean
 gl_make_current(SpiceDisplay *display, GError **err)
 {
     SpiceDisplayPrivate *d = display->priv;
+    GtkWidget *area;
 
     g_return_val_if_fail(d->egl.context_ready, FALSE);
 
-#ifdef GDK_WINDOWING_X11
-    if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
-        EGLBoolean success = eglMakeCurrent(d->egl.display,
-                                            d->egl.surface,
-                                            d->egl.surface,
-                                            d->egl.ctx);
-        if (success != EGL_TRUE) {
-            g_set_error_literal(err, SPICE_CLIENT_ERROR,
-                                SPICE_CLIENT_ERROR_FAILED,
-                                "failed to activate context");
-            return FALSE;
-        }
-        return TRUE;
-    }
-#endif
-
-    GtkWidget *area = gtk_stack_get_child_by_name(d->stack, "gl-area");
-
+    area = gtk_stack_get_child_by_name(d->stack, "gl-area");
     gtk_gl_area_make_current(GTK_GL_AREA(area));
-
-    return TRUE;
-}
-
-static void
-spice_egl_prepare_default_framebuffer(void)
-{
-#ifdef GDK_WINDOWING_X11
-    if (!GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
-        return;
-    }
-
-    glDrawBuffer(GL_BACK);
-    glReadBuffer(GL_BACK);
-#endif
-}
-
-static gboolean spice_widget_init_egl_win(SpiceDisplay *display, GdkWindow *win,
-                                          GError **err)
-{
-    SpiceDisplayPrivate *d = display->priv;
-    EGLNativeWindowType native = 0;
-
-    if (d->egl.surface)
-        return TRUE;
-
-#ifdef GDK_WINDOWING_X11
-    if (GDK_IS_X11_WINDOW(win)) {
-        if (!gdk_window_ensure_native(win)) {
-            g_set_error_literal(err, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
-                                "failed to ensure native X11 window for EGL");
-            return FALSE;
-        }
-        native = (EGLNativeWindowType)GDK_WINDOW_XID(win);
-    }
-#endif
-
-    if (!native) {
-        g_set_error_literal(err, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
-                            "this platform isn't supported");
-        return FALSE;
-    }
-
-    d->egl.surface = eglCreateWindowSurface(d->egl.display,
-                                            d->egl.conf,
-                                            native, NULL);
-
-    if (!d->egl.surface) {
-        g_set_error(err, SPICE_CLIENT_ERROR, SPICE_CLIENT_ERROR_FAILED,
-                    "failed to init egl surface: egl_error=0x%x",
-                    eglGetError());
-        return FALSE;
-    }
-
-    if (!gl_make_current(display, err))
-        return FALSE;
-
-    return TRUE;
-}
-
-G_GNUC_INTERNAL
-gboolean spice_egl_realize_display(SpiceDisplay *display, GdkWindow *win, GError **err)
-{
-    DISPLAY_DEBUG(display, "egl realize");
-    if (!spice_widget_init_egl_win(display, win, err))
-        return FALSE;
-    gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(display));
-    spice_egl_resize_display(display, gdk_window_get_width(win) * scale_factor,
-                             gdk_window_get_height(win) * scale_factor);
 
     return TRUE;
 }
@@ -433,7 +225,7 @@ void spice_egl_unrealize_display(SpiceDisplay *display)
 {
     SpiceDisplayPrivate *d = display->priv;
 
-    DISPLAY_DEBUG(display, "egl unrealize %p", d->egl.surface);
+    DISPLAY_DEBUG(display, "egl unrealize");
 
     if (!gl_make_current(display, NULL))
         return;
@@ -462,29 +254,6 @@ void spice_egl_unrealize_display(SpiceDisplay *display)
         glDeleteProgram(d->egl.prog);
         d->egl.prog = 0;
     }
-
-#ifdef GDK_WINDOWING_X11
-    if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
-        /* egl.surface && egl.ctx are only created on x11, see
-           spice_egl_init() */
-
-        if (d->egl.surface != EGL_NO_SURFACE) {
-            eglDestroySurface(d->egl.display, d->egl.surface);
-            d->egl.surface = EGL_NO_SURFACE;
-        }
-
-        if (d->egl.ctx) {
-            eglDestroyContext(d->egl.display, d->egl.ctx);
-            d->egl.ctx = 0;
-        }
-
-        eglMakeCurrent(d->egl.display, EGL_NO_SURFACE, EGL_NO_SURFACE,
-                       EGL_NO_CONTEXT);
-
-        /* do not call eglterminate() since egl may be used by
-         * somebody else code */
-    }
-#endif
 }
 
 /* w and h should be adjusted to gdk scaling */
@@ -611,8 +380,6 @@ void spice_egl_update_display(SpiceDisplay *display)
     if (!gl_make_current(display, NULL))
         return;
 
-    spice_egl_prepare_default_framebuffer();
-
     spice_display_get_scaling(display, &s, &x, &y, &w, &h);
 
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -677,13 +444,6 @@ void spice_egl_update_display(SpiceDisplay *display)
                              width, -height,
                              0, 0, 1, 1);
     }
-
-#ifdef GDK_WINDOWING_X11
-    if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
-        /* gtk+ does the swap with gtkglarea */
-        eglSwapBuffers(d->egl.display, d->egl.surface);
-    }
-#endif
 
     glUseProgram(prog);
 }

@@ -665,19 +665,6 @@ gl_area_realize(GtkGLArea *area, gpointer user_data)
 }
 #endif
 
-static void
-drawing_area_realize(GtkWidget *area, gpointer user_data)
-{
-#if defined(GDK_WINDOWING_X11) && defined(HAVE_EGL)
-    SpiceDisplay *display = SPICE_DISPLAY(user_data);
-
-    if (GDK_IS_X11_DISPLAY(gdk_display_get_default()) &&
-        spice_display_channel_get_gl_scanout2(display->priv->display) != NULL) {
-        spice_display_widget_gl_scanout(display);
-    }
-#endif
-}
-
 static void spice_display_init(SpiceDisplay *display)
 {
     GtkWidget *widget = GTK_WIDGET(display);
@@ -692,22 +679,7 @@ static void spice_display_init(SpiceDisplay *display)
 
     g_object_connect(area,
                      "signal::draw", draw_event, display,
-                     "signal::realize", drawing_area_realize, display,
                      NULL);
-#ifdef HAVE_EGL
-#ifdef GDK_WINDOWING_X11
-    if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
-        GError *err = NULL;
-
-        if (!spice_egl_init(display, &err)) {
-            g_critical("egl init failed: %s", err->message);
-            g_clear_error(&err);
-        } else {
-            spice_egl_set_x11_window_visual(display, area);
-        }
-    }
-#endif
-#endif
     gtk_stack_add_named(d->stack, area, "draw-area");
     gtk_stack_set_visible_child(d->stack, area);
 
@@ -1511,21 +1483,8 @@ static void set_egl_enabled(SpiceDisplay *display, bool enabled)
     if (egl_enabled(d) == enabled)
         return;
 
-#ifdef GDK_WINDOWING_X11
-    if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
-        /* even though the function is marked as deprecated, it's the
-         * only way I found to prevent glitches when the window is
-         * resized. */
-        GtkWidget *area = gtk_stack_get_child_by_name(d->stack, "draw-area");
-        G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-        gtk_widget_set_double_buffered(GTK_WIDGET(area), !enabled);
-        G_GNUC_END_IGNORE_DEPRECATIONS
-    } else
-#endif
-    {
-        gtk_stack_set_visible_child_name(d->stack,
-                                         enabled ? "gl-area" : "draw-area");
-    }
+    gtk_stack_set_visible_child_name(d->stack,
+                                     enabled ? "gl-area" : "draw-area");
 
     if (enabled && d->egl.context_ready) {
         gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(display));
@@ -1541,14 +1500,6 @@ static gboolean draw_event(GtkWidget *widget, cairo_t *cr, gpointer data)
     SpiceDisplay *display = SPICE_DISPLAY(data);
     SpiceDisplayPrivate *d = display->priv;
     g_return_val_if_fail(d != NULL, false);
-
-#ifdef HAVE_EGL
-    if (egl_enabled(d) &&
-        g_str_equal(gtk_stack_get_visible_child_name(d->stack), "draw-area")) {
-        spice_egl_update_display(display);
-        return false;
-    }
-#endif
 
     if (d->mark == 0 || d->canvas.data == NULL ||
         d->area.width == 0 || d->area.height == 0)
@@ -3343,29 +3294,6 @@ void spice_display_widget_gl_scanout(SpiceDisplay *display)
     GError *err = NULL;
 
     DISPLAY_DEBUG(display, "%s: got scanout",  __FUNCTION__);
-
-#ifdef GDK_WINDOWING_X11
-    GtkWidget *area = gtk_stack_get_child_by_name(d->stack, "draw-area");
-
-    if (GDK_IS_X11_DISPLAY(gdk_display_get_default()) && gtk_widget_get_realized(area)) {
-        if (!d->egl.context_ready) {
-            if (!spice_egl_init(display, &err)) {
-                g_critical("egl init failed: %s", err->message);
-                g_clear_error(&err);
-            }
-        }
-
-        if (d->egl.context_ready && d->egl.surface == EGL_NO_SURFACE) {
-            if (!spice_egl_realize_display(display, gtk_widget_get_window(area), &err)) {
-                g_critical("egl realize failed: %s", err->message);
-                g_clear_error(&err);
-            }
-
-            gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(display));
-            spice_egl_resize_display(display, d->ww * scale_factor, d->wh * scale_factor);
-        }
-    }
-#endif
 
     set_egl_enabled(display, true);
 
