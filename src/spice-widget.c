@@ -649,17 +649,31 @@ gl_area_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data)
 }
 
 static void
+spice_display_show_gl_error(SpiceDisplay *display, const char *reason)
+{
+    SpiceDisplayPrivate *d = display->priv;
+
+    g_critical("gl area realize failed: %s", reason);
+    gtk_label_set_label(GTK_LABEL(d->label),
+                        _("spice-gtk: This client failed to enable local GL rendering support."));
+    gtk_stack_set_visible_child(d->stack, d->label);
+    update_ready(display);
+}
+
+static void
 gl_area_realize(GtkGLArea *area, gpointer user_data)
 {
     SpiceDisplay *display = SPICE_DISPLAY(user_data);
     GError *err = NULL;
 
     gtk_gl_area_make_current(area);
-    if (gtk_gl_area_get_error(area) != NULL)
+    if (gtk_gl_area_get_error(area) != NULL) {
+        spice_display_show_gl_error(display, gtk_gl_area_get_error(area)->message);
         return;
+    }
 
     if (!spice_egl_init(display, &err)) {
-        g_critical("egl init failed: %s", err->message);
+        spice_display_show_gl_error(display, err->message);
         g_clear_error(&err);
     }
 }
