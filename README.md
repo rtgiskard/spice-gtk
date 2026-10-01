@@ -72,6 +72,15 @@ Basic build (GTK 4 client library):
 The GTK 3 widget, GIR, pkg-config file and `spicy` client are no longer built.
 Applications must use `spice-client-gtk-4.0` and `SpiceClientGtk-4.0`.
 
+Mouse-input regressions build when GTK's X11 backend and the XTest development
+library are available. They inject real input and require an explicitly selected
+private X11 server; never use the desktop's display. For example:
+
+    SPICE_TEST_DISPLAY=:1 GSETTINGS_BACKEND=memory meson test -C build test-widget-input
+
+Use the private server's actual display name, and repeat with `GDK_SCALE=2` to
+check scaled, nested-widget input coordinates.
+
 Rendering regressions need a native GTK display. Clipboard regressions skip unless
 `SPICE_TEST_DISPLAY` names an already-running private Wayland compositor; never
 point that test at the desktop clipboard. Run the suite on that private display:
