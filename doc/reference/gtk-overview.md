@@ -14,7 +14,7 @@ and OpenGL acceleration.
 
 ```c
 SpiceDisplay *display = spice_display_new(session, 0);
-gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(display));
+gtk_window_set_child(GTK_WINDOW(window), GTK_WIDGET(display));
 ```
 
 ### Keyboard and Mouse Grabbing

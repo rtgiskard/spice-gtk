@@ -26,16 +26,14 @@
 #endif
 #ifdef GDK_WINDOWING_X11
 #include <X11/Xlib.h>
-#include <gdk/gdkx.h>
-#ifdef HAVE_LIBVA
-#include <va/va_x11.h>
-#endif
+#include <gdk/x11/gdkx.h>
+#include <X11/extensions/XInput2.h>
 #endif
 #ifdef GDK_WINDOWING_WAYLAND
-#include <gdk/gdkwayland.h>
+#include <gdk/wayland/gdkwayland.h>
 #ifdef HAVE_WAYLAND_PROTOCOLS
-#include "pointer-constraints-unstable-v1-client-protocol.h"
-#include "relative-pointer-unstable-v1-client-protocol.h"
+#include "pointer-constraints-unstable-v1-client-protocol-gtk4.h"
+#include "relative-pointer-unstable-v1-client-protocol-gtk4.h"
 #include "wayland-extensions.h"
 #endif
 #endif
@@ -44,7 +42,7 @@
 #include <windows.h>
 #include <dinput.h>
 #include <ime.h>
-#include <gdk/gdkwin32.h>
+#include <gdk/win32/gdkwin32.h>
 #ifndef MAPVK_VK_TO_VSC /* may be undefined in older mingw-headers */
 #define MAPVK_VK_TO_VSC 0
 #endif
@@ -56,6 +54,309 @@
 #include "vncdisplaykeymap.h"
 #include "spice-grabsequence-priv.h"
 
+
+static inline GdkSurface *
+get_widget_surface(GtkWidget *widget)
+{
+    GtkNative *native = gtk_widget_get_native(widget);
+    if (native == NULL)
+        return NULL;
+    return gtk_native_get_surface(native);
+}
+
+static void scaling_updated(SpiceDisplay *display);
+static void update_mouse_cursor(SpiceDisplay *display);
+double spice_display_get_surface_scale(SpiceDisplay *display)
+{
+    GdkSurface *surface = get_widget_surface(GTK_WIDGET(display));
+
+    if (surface == NULL)
+        return 1.0;
+
+    return gdk_surface_get_scale(surface);
+}
+
+static void surface_scale_changed(GdkSurface *surface,
+                                  GParamSpec *pspec G_GNUC_UNUSED,
+                                  gpointer user_data)
+{
+    SpiceDisplay *display = SPICE_DISPLAY(user_data);
+    SpiceDisplayPrivate *d = display->priv;
+
+    if (surface != get_widget_surface(GTK_WIDGET(display)))
+        return;
+
+    if (d->canvas.surface != NULL) {
+        double scale = spice_display_get_surface_scale(display);
+        cairo_surface_set_device_scale(d->canvas.surface, scale, scale);
+    }
+
+    update_mouse_cursor(display);
+    scaling_updated(display);
+}
+
+static inline GdkCursor *
+cursor_new_from_surface(GdkDisplay *display G_GNUC_UNUSED,
+                        cairo_surface_t *surface,
+                        double hotspot_x, double hotspot_y)
+{
+    GdkTexture *texture;
+    GdkCursor *cursor;
+    int width, height, stride;
+    unsigned char *data;
+    GBytes *bytes;
+
+    width = cairo_image_surface_get_width(surface);
+    height = cairo_image_surface_get_height(surface);
+    stride = cairo_image_surface_get_stride(surface);
+
+    cairo_surface_flush(surface);
+    data = cairo_image_surface_get_data(surface);
+    bytes = g_bytes_new(data, stride * height);
+
+    texture = gdk_memory_texture_new(width, height,
+                                     GDK_MEMORY_B8G8R8A8_PREMULTIPLIED,
+                                     bytes, stride);
+    g_bytes_unref(bytes);
+
+    cursor = gdk_cursor_new_from_texture(texture,
+                                         (int)hotspot_x, (int)hotspot_y,
+                                         NULL);
+    g_object_unref(texture);
+    return cursor;
+}
+
+static inline cairo_surface_t *
+cairo_surface_from_pixbuf(GdkPixbuf *pixbuf, int scale,
+                          GdkSurface *surface G_GNUC_UNUSED)
+{
+    int width = gdk_pixbuf_get_width(pixbuf);
+    int height = gdk_pixbuf_get_height(pixbuf);
+    cairo_surface_t *cs = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
+    cairo_t *cr = cairo_create(cs);
+
+    gdk_cairo_set_source_pixbuf(cr, pixbuf, 0, 0);
+    cairo_paint(cr);
+    cairo_destroy(cr);
+
+    if (scale > 0)
+        cairo_surface_set_device_scale(cs, scale, scale);
+    return cs;
+}
+
+static inline void
+device_warp(GdkDisplay *gdk_display, gint x, gint y)
+{
+#ifdef GDK_WINDOWING_X11
+    if (GDK_IS_X11_DISPLAY(gdk_display)) {
+        Display *xdisplay = gdk_x11_display_get_xdisplay(gdk_display);
+        XWarpPointer(xdisplay, None, DefaultRootWindow(xdisplay),
+                     0, 0, 0, 0, x, y);
+        XFlush(xdisplay);
+        return;
+    }
+#endif
+    /* Wayland / other backends: no-op */
+    (void)gdk_display; (void)x; (void)y;
+}
+
+static inline gboolean
+grab_pointer(GdkDisplay *gdk_display, GdkSurface *surface, GdkCursor *cursor)
+{
+#ifdef GDK_WINDOWING_X11
+    if (GDK_IS_X11_DISPLAY(gdk_display)) {
+        Display *xdisplay = gdk_x11_display_get_xdisplay(gdk_display);
+        Window xwindow = GDK_SURFACE_XID(surface);
+        Cursor xcursor = None;
+
+        if (cursor) {
+            const char *name = gdk_cursor_get_name(cursor);
+            if (name && g_strcmp0(name, "none") == 0) {
+                static char empty_data[] = { 0 };
+                Pixmap pixmap = XCreatePixmapFromBitmapData(
+                    xdisplay, xwindow, empty_data, 1, 1, 0, 0, 1);
+                XColor color = { 0 };
+                xcursor = XCreatePixmapCursor(
+                    xdisplay, pixmap, pixmap, &color, &color, 0, 0);
+                XFreePixmap(xdisplay, pixmap);
+            }
+        }
+
+        GdkSeat *seat = gdk_display_get_default_seat(gdk_display);
+        GdkDevice *pointer = gdk_seat_get_pointer(seat);
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+        int xi2_device_id = gdk_x11_device_get_id(pointer);
+G_GNUC_END_IGNORE_DEPRECATIONS
+
+        XIEventMask mask;
+        unsigned char mask_bits[(XI_LASTEVENT + 7) / 8];
+        memset(mask_bits, 0, sizeof(mask_bits));
+        XISetMask(mask_bits, XI_Motion);
+        XISetMask(mask_bits, XI_ButtonPress);
+        XISetMask(mask_bits, XI_ButtonRelease);
+        XISetMask(mask_bits, XI_Enter);
+        XISetMask(mask_bits, XI_Leave);
+        mask.deviceid = xi2_device_id;
+        mask.mask_len = sizeof(mask_bits);
+        mask.mask = mask_bits;
+
+        int result = XIGrabDevice(xdisplay, xi2_device_id, xwindow,
+                                  CurrentTime, xcursor,
+                                  GrabModeAsync, GrabModeAsync,
+                                  False, &mask);
+
+        if (xcursor != None)
+            XFreeCursor(xdisplay, xcursor);
+
+        return result == GrabSuccess;
+    }
+#endif
+    (void)gdk_display; (void)surface; (void)cursor;
+    return TRUE;
+}
+
+static inline gboolean
+grab_keyboard(GdkDisplay *gdk_display, GdkSurface *surface)
+{
+#ifdef GDK_WINDOWING_X11
+    if (GDK_IS_X11_DISPLAY(gdk_display)) {
+        Display *xdisplay = gdk_x11_display_get_xdisplay(gdk_display);
+        Window xwindow = GDK_SURFACE_XID(surface);
+
+        GdkSeat *seat = gdk_display_get_default_seat(gdk_display);
+        GdkDevice *keyboard = gdk_seat_get_keyboard(seat);
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+        int xi2_device_id = gdk_x11_device_get_id(keyboard);
+G_GNUC_END_IGNORE_DEPRECATIONS
+
+        XIEventMask mask;
+        unsigned char mask_bits[(XI_LASTEVENT + 7) / 8];
+        memset(mask_bits, 0, sizeof(mask_bits));
+        XISetMask(mask_bits, XI_KeyPress);
+        XISetMask(mask_bits, XI_KeyRelease);
+        mask.deviceid = xi2_device_id;
+        mask.mask_len = sizeof(mask_bits);
+        mask.mask = mask_bits;
+
+        int result = XIGrabDevice(xdisplay, xi2_device_id, xwindow,
+                                  CurrentTime, None,
+                                  GrabModeAsync, GrabModeAsync,
+                                  False, &mask);
+        return result == GrabSuccess;
+    }
+#endif
+    (void)gdk_display; (void)surface;
+    return TRUE;
+}
+
+static inline void
+ungrab_pointer_device(GdkDisplay *gdk_display)
+{
+#ifdef GDK_WINDOWING_X11
+    if (GDK_IS_X11_DISPLAY(gdk_display)) {
+        Display *xdisplay = gdk_x11_display_get_xdisplay(gdk_display);
+        GdkSeat *seat = gdk_display_get_default_seat(gdk_display);
+        GdkDevice *pointer = gdk_seat_get_pointer(seat);
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+        int xi2_device_id = gdk_x11_device_get_id(pointer);
+G_GNUC_END_IGNORE_DEPRECATIONS
+        XIUngrabDevice(xdisplay, xi2_device_id, CurrentTime);
+        XFlush(xdisplay);
+        return;
+    }
+#endif
+    (void)gdk_display;
+}
+
+static inline void
+ungrab_keyboard_device(GdkDisplay *gdk_display)
+{
+#ifdef GDK_WINDOWING_X11
+    if (GDK_IS_X11_DISPLAY(gdk_display)) {
+        Display *xdisplay = gdk_x11_display_get_xdisplay(gdk_display);
+        GdkSeat *seat = gdk_display_get_default_seat(gdk_display);
+        GdkDevice *keyboard = gdk_seat_get_keyboard(seat);
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+        int xi2_device_id = gdk_x11_device_get_id(keyboard);
+G_GNUC_END_IGNORE_DEPRECATIONS
+        XIUngrabDevice(xdisplay, xi2_device_id, CurrentTime);
+        XFlush(xdisplay);
+        return;
+    }
+#endif
+    (void)gdk_display;
+}
+
+static inline void
+surface_get_root_coords(GdkSurface *surface,
+                        gint wx, gint wy,
+                        gint *root_x, gint *root_y)
+{
+#ifdef GDK_WINDOWING_X11
+    GdkDisplay *gdk_display = gdk_surface_get_display(surface);
+    if (GDK_IS_X11_DISPLAY(gdk_display)) {
+        Display *xdisplay = gdk_x11_display_get_xdisplay(gdk_display);
+        Window xwindow = GDK_SURFACE_XID(surface);
+        Window root_ret;
+        int rx = 0, ry = 0;
+        XTranslateCoordinates(xdisplay, xwindow,
+                              XDefaultRootWindow(xdisplay),
+                              wx, wy, &rx, &ry, &root_ret);
+        *root_x = rx;
+        *root_y = ry;
+        return;
+    }
+#endif
+    *root_x = 0;
+    *root_y = 0;
+    (void)surface; (void)wx; (void)wy;
+}
+
+static inline GdkMonitor *
+get_primary_monitor(GdkDisplay *display)
+{
+    GListModel *monitors = gdk_display_get_monitors(display);
+    if (g_list_model_get_n_items(monitors) > 0)
+        return GDK_MONITOR(g_list_model_get_item(monitors, 0));
+    return NULL;
+}
+
+static inline GdkMonitor *
+get_monitor_at_point(GdkDisplay *display, int x, int y)
+{
+    GListModel *monitors = gdk_display_get_monitors(display);
+    guint n = g_list_model_get_n_items(monitors);
+    for (guint i = 0; i < n; i++) {
+        GdkMonitor *mon = GDK_MONITOR(g_list_model_get_item(monitors, i));
+        GdkRectangle geom;
+        gdk_monitor_get_geometry(mon, &geom);
+        if (x >= geom.x && x < geom.x + geom.width &&
+            y >= geom.y && y < geom.y + geom.height) {
+            g_object_unref(mon);
+            return GDK_MONITOR(g_list_model_get_item(monitors, i));
+        }
+        g_object_unref(mon);
+    }
+    if (n > 0)
+        return GDK_MONITOR(g_list_model_get_item(monitors, 0));
+    return NULL;
+}
+
+static inline gboolean
+key_event_is_modifier(GdkEvent *event)
+{
+    guint keyval = gdk_key_event_get_keyval(event);
+    return (keyval == GDK_KEY_Shift_L || keyval == GDK_KEY_Shift_R ||
+            keyval == GDK_KEY_Control_L || keyval == GDK_KEY_Control_R ||
+            keyval == GDK_KEY_Alt_L || keyval == GDK_KEY_Alt_R ||
+            keyval == GDK_KEY_Meta_L || keyval == GDK_KEY_Meta_R ||
+            keyval == GDK_KEY_Super_L || keyval == GDK_KEY_Super_R ||
+            keyval == GDK_KEY_Hyper_L || keyval == GDK_KEY_Hyper_R ||
+            keyval == GDK_KEY_Caps_Lock || keyval == GDK_KEY_Num_Lock ||
+            keyval == GDK_KEY_Scroll_Lock ||
+            keyval == GDK_KEY_ISO_Lock || keyval == GDK_KEY_ISO_Level3_Shift ||
+            keyval == GDK_KEY_ISO_Level5_Shift);
+}
 
 /**
  * SECTION:spice-widget
@@ -82,7 +383,7 @@
  * save to disk).
  */
 
-G_DEFINE_TYPE_WITH_PRIVATE(SpiceDisplay, spice_display, GTK_TYPE_EVENT_BOX)
+G_DEFINE_TYPE_WITH_PRIVATE(SpiceDisplay, spice_display, GTK_TYPE_BOX)
 
 /* Properties */
 enum {
@@ -127,16 +428,128 @@ static void recalc_geometry(GtkWidget *widget);
 static void channel_new(SpiceSession *s, SpiceChannel *channel, SpiceDisplay *display);
 static void channel_destroy(SpiceSession *s, SpiceChannel *channel, SpiceDisplay *display);
 static void cursor_invalidate(SpiceDisplay *display);
-static bool egl_enabled(SpiceDisplayPrivate *d);
+static bool dmabuf_enabled(SpiceDisplayPrivate *d);
 static void update_mouse_cursor(SpiceDisplay *display);
 static void update_area(SpiceDisplay *display, gint x, gint y, gint width, gint height);
 static void release_keys(SpiceDisplay *display);
-static void size_allocate(GtkWidget *widget, GtkAllocation *conf, gpointer data);
-static gboolean draw_event(GtkWidget *widget, cairo_t *cr, gpointer data);
+static void release_input_state(SpiceDisplay *display);
+static void size_allocate_impl(SpiceDisplay *display, gint x, gint y, gint width, gint height);
+static void draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer data);
 static void update_size_request(SpiceDisplay *display);
-static GdkDevice *spice_gdk_window_get_pointing_device(GdkWindow *window);
-static void gst_size_allocate(GtkWidget *widget, GdkRectangle *a, gpointer data);
-static gboolean gst_draw_event(GtkWidget *widget, cairo_t *cr, gpointer data);
+static void spice_display_queue_draw(SpiceDisplay *display);
+static GdkDevice *spice_gdk_window_get_pointing_device(GdkSurface *surface);
+
+#ifdef HAVE_EGL
+static void complete_pending_draws(SpiceDisplay *display)
+{
+    SpiceDisplayPrivate *d = display->priv;
+    while (d->dmabuf.pending_draws > 0) {
+        d->dmabuf.pending_draws--;
+        spice_display_channel_gl_draw_done(d->display);
+    }
+}
+
+
+typedef struct {
+    GtkDrawingArea parent;
+    SpiceDisplay *display; /* owned by the parent widget */
+} SpiceCanvasArea;
+
+typedef struct {
+    GtkDrawingAreaClass parent_class;
+} SpiceCanvasAreaClass;
+
+G_DEFINE_TYPE(SpiceCanvasArea, spice_canvas_area, GTK_TYPE_DRAWING_AREA)
+
+static void spice_canvas_area_snapshot(GtkWidget *widget, GtkSnapshot *snapshot)
+{
+    SpiceDisplay *display = ((SpiceCanvasArea *)widget)->display;
+    SpiceDisplayPrivate *d = display->priv;
+    GdkTexture *texture = d->dmabuf.scanout_texture;
+    double surface_scale;
+    int x, y, w, h;
+    float sx, sy;
+    graphene_rect_t clip, bounds;
+    static const GdkRGBA black = { 0, 0, 0, 1 };
+
+    if (!dmabuf_enabled(d)) {
+        GTK_WIDGET_CLASS(spice_canvas_area_parent_class)->snapshot(widget, snapshot);
+        return;
+    }
+
+    graphene_rect_init(&bounds, 0, 0,
+                       gtk_widget_get_width(widget), gtk_widget_get_height(widget));
+    gtk_snapshot_append_color(snapshot, &black, &bounds);
+    if (texture == NULL || d->area.width <= 0 || d->area.height <= 0) {
+        complete_pending_draws(display);
+        return;
+    }
+
+    surface_scale = spice_display_get_surface_scale(display);
+    spice_display_get_scaling(display, NULL, &x, &y, &w, &h);
+    sx = (double)w / d->area.width / surface_scale;
+    sy = (double)h / d->area.height / surface_scale;
+
+    /* Clip in widget coordinates before positioning the complete scanout.
+     * The monitor offset is in texture pixels, not widget pixels. */
+    graphene_rect_init(&clip, x / surface_scale, y / surface_scale,
+                       w / surface_scale, h / surface_scale);
+    gtk_snapshot_save(snapshot);
+    gtk_snapshot_push_clip(snapshot, &clip);
+
+    if (!d->dmabuf.scanout.y0top) {
+        /* The DMA-BUF starts at the bottom: reverse its vertical axis
+         * without copying the pixels or changing the monitor crop. */
+        gtk_snapshot_scale(snapshot, 1, -1);
+        graphene_rect_init(&bounds, x / surface_scale - d->area.x * sx,
+                           -y / surface_scale -
+                           (gdk_texture_get_height(texture) - d->area.y) * sy,
+                           gdk_texture_get_width(texture) * sx,
+                           gdk_texture_get_height(texture) * sy);
+    } else {
+        graphene_rect_init(&bounds, x / surface_scale - d->area.x * sx,
+                           y / surface_scale - d->area.y * sy,
+                           gdk_texture_get_width(texture) * sx,
+                           gdk_texture_get_height(texture) * sy);
+    }
+    gtk_snapshot_append_texture(snapshot, texture, &bounds);
+    gtk_snapshot_pop(snapshot);
+    gtk_snapshot_restore(snapshot);
+    {
+        cairo_t *cr = gtk_snapshot_append_cairo(snapshot, &clip);
+        double s;
+
+        spice_display_get_scaling(display, &s, NULL, NULL, NULL, NULL);
+        cairo_translate(cr, x / surface_scale, y / surface_scale);
+        cairo_scale(cr, s, s);
+        cairo_translate(cr, -d->area.x, -d->area.y);
+        spice_cairo_draw_cursor(display, cr);
+        cairo_destroy(cr);
+    }
+    complete_pending_draws(display);
+
+}
+
+static void spice_canvas_area_class_init(SpiceCanvasAreaClass *klass)
+{
+    GTK_WIDGET_CLASS(klass)->snapshot = spice_canvas_area_snapshot;
+}
+
+static void spice_canvas_area_init(SpiceCanvasArea *area G_GNUC_UNUSED)
+{
+}
+#endif
+
+/* Event controller callbacks */
+static gboolean key_pressed_cb(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer user_data);
+static void key_released_cb(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer user_data);
+static void focus_in_cb(GtkEventController *controller, gpointer user_data);
+static void focus_out_cb(GtkEventController *controller, gpointer user_data);
+static void enter_cb(GtkEventControllerMotion *controller, gdouble x, gdouble y, gpointer user_data);
+static void leave_cb(GtkEventControllerMotion *controller, gpointer user_data);
+static void motion_cb(GtkEventControllerMotion *controller, gdouble x, gdouble y, gpointer user_data);
+static gboolean scroll_cb(GtkEventControllerScroll *controller, gdouble dx, gdouble dy, gpointer user_data);
+static gboolean button_controller_event_cb(GtkEventControllerLegacy *controller, GdkEvent *event, gpointer user_data);
 
 /* ---------------------------------------------------------------- */
 
@@ -194,44 +607,21 @@ static void spice_display_get_property(GObject    *object,
 static void scaling_updated(SpiceDisplay *display)
 {
     SpiceDisplayPrivate *d = display->priv;
-    GdkWindow *window = gtk_widget_get_window(GTK_WIDGET(display));
+    GdkSurface *surface = get_widget_surface(GTK_WIDGET(display));
 
     recalc_geometry(GTK_WIDGET(display));
-    if (d->canvas.surface && window) { /* if not yet shown */
+    if (d->canvas.surface && surface) { /* if not yet shown */
         update_mouse_cursor(display);
-        gtk_widget_queue_draw(GTK_WIDGET(display));
+        spice_display_queue_draw(display);
     }
     update_size_request(display);
-}
-
-static void scale_factor_changed(SpiceDisplay *display,
-                                 GParamSpec *pspec G_GNUC_UNUSED,
-                                 gpointer user_data G_GNUC_UNUSED)
-{
-    SpiceDisplayPrivate *d = display->priv;
-    gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(display));
-
-    /* The cairo surface persists while a Wayland window moves between
-     * outputs. Re-apply its device scale when GTK changes the widget scale
-     * factor so display scaling stays correct on mixed-DPI setups. */
-    if (d->canvas.surface != NULL) {
-        cairo_surface_set_device_scale(d->canvas.surface, scale_factor, scale_factor);
-    }
-
-#ifdef HAVE_EGL
-    if (egl_enabled(d)) {
-        spice_egl_resize_display(display, d->ww * scale_factor, d->wh * scale_factor);
-    }
-#endif
-
-    scaling_updated(display);
 }
 
 static void update_size_request(SpiceDisplay *display)
 {
     SpiceDisplayPrivate *d = display->priv;
     gint reqwidth, reqheight;
-    gint scale_factor;
+    double scale = spice_display_get_surface_scale(display);
 
     if (d->resize_guest_enable || d->allow_scaling) {
         reqwidth = 640;
@@ -241,10 +631,8 @@ static void update_size_request(SpiceDisplay *display)
         reqheight = d->area.height;
     }
 
-    scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(display));
-
-    reqwidth /= scale_factor;
-    reqheight /= scale_factor;
+    reqwidth = ceil(reqwidth / scale);
+    reqheight = ceil(reqheight / scale);
 
     gtk_widget_set_size_request(GTK_WIDGET(display), reqwidth, reqheight);
     recalc_geometry(GTK_WIDGET(display));
@@ -255,17 +643,21 @@ static void update_keyboard_focus(SpiceDisplay *display, gboolean state)
 {
     SpiceDisplayPrivate *d = display->priv;
 
+    if (d->keyboard_have_focus == state)
+        return;
     d->keyboard_have_focus = state;
     spice_gtk_session_set_keyboard_has_focus(d->gtk_session, state);
 
-    /* keyboard grab gets inhibited by usb-device-manager when it is
-       in the process of redirecting a usb-device (as this may show a
-       policykit dialog). Making autoredir/automount setting changes while
-       this is happening is not a good idea! */
-    if (d->keyboard_grab_inhibit)
-        return;
-
-    spice_gtk_session_request_auto_usbredir(d->gtk_session, state);
+    /* Only release the auto-redirection request that this widget acquired.
+     * Grab inhibition may change between focus-in and focus-out, and GTK can
+     * deliver focus-out again while unrooting the widget. */
+    if (state && !d->keyboard_grab_inhibit) {
+        spice_gtk_session_request_auto_usbredir(d->gtk_session, TRUE);
+        d->auto_usbredir_requested = TRUE;
+    } else if (!state && d->auto_usbredir_requested) {
+        spice_gtk_session_request_auto_usbredir(d->gtk_session, FALSE);
+        d->auto_usbredir_requested = FALSE;
+    }
 }
 
 static gint get_display_id(SpiceDisplay *display)
@@ -281,10 +673,10 @@ static gint get_display_id(SpiceDisplay *display)
     return d->channel_id;
 }
 
-static bool egl_enabled(SpiceDisplayPrivate *d)
+static bool dmabuf_enabled(SpiceDisplayPrivate *d)
 {
 #ifdef HAVE_EGL
-    return d->egl.enabled;
+    return d->dmabuf.enabled;
 #else
     return false;
 #endif
@@ -299,22 +691,21 @@ static void update_ready(SpiceDisplay *display)
         ready = true;
     }
     if (d->monitor_ready) {
-        ready = egl_enabled(d) || d->mark != 0;
+        ready = dmabuf_enabled(d) || d->mark != 0;
     }
     /* If the 'resize-guest' property is set, the application expects spice-gtk
      * to manage the size and state of the displays, so update the 'enabled'
      * state here. If 'resize-guest' is false, we can assume that the
      * application will manage the state of the displays.
      */
-    if (d->resize_guest_enable) {
+    if (d->resize_guest_enable && d->main != NULL)
         spice_main_channel_update_display_enabled(d->main, get_display_id(display), ready, TRUE);
-    }
 
     if (d->ready == ready)
         return;
 
-    if (ready && gtk_widget_get_window(GTK_WIDGET(display)))
-        gtk_widget_queue_draw(GTK_WIDGET(display));
+    if (ready && get_widget_surface(GTK_WIDGET(display)))
+        spice_display_queue_draw(display);
 
     d->ready = ready;
     g_object_notify(G_OBJECT(display), "ready");
@@ -367,7 +758,7 @@ void spice_display_widget_update_monitor_area(SpiceDisplay *display)
     }
 
     /* If only one head on this monitor, update the whole area */
-    if (monitors->len == 1 && !egl_enabled(d)) {
+    if (monitors->len == 1 && !dmabuf_enabled(d)) {
         update_area(display, 0, 0, c->width, c->height);
     } else {
         update_area(display, c->x, c->y, c->width, c->height);
@@ -377,9 +768,17 @@ void spice_display_widget_update_monitor_area(SpiceDisplay *display)
 
 whole:
     g_clear_pointer(&monitors, g_array_unref);
-    /* by display whole surface */
+    /* A GL scanout need not have a software primary surface. */
+#ifdef HAVE_EGL
+    if (dmabuf_enabled(d)) {
+        const SpiceGlScanout2 *scanout = spice_display_channel_get_gl_scanout2(d->display);
+        if (scanout != NULL) {
+            update_area(display, 0, 0, scanout->width, scanout->height);
+            return;
+        }
+    }
+#endif
     update_area(display, 0, 0, d->canvas.width, d->canvas.height);
-    set_monitor_ready(display, true);
 }
 
 static void
@@ -445,8 +844,11 @@ static void spice_display_set_property(GObject      *object,
         scaling_updated(display);
         break;
     case PROP_DISABLE_INPUTS:
+        if (g_value_get_boolean(value) && !d->disable_inputs)
+            release_input_state(display);
         d->disable_inputs = g_value_get_boolean(value);
         gtk_widget_set_can_focus(GTK_WIDGET(display), !d->disable_inputs);
+        gtk_widget_set_focusable(GTK_WIDGET(display), !d->disable_inputs);
         update_keyboard_grab(display);
         update_mouse_grab(display);
         break;
@@ -483,16 +885,24 @@ static void spice_display_dispose(GObject *obj)
 
     DISPLAY_DEBUG(display, "spice display dispose");
 
-    spice_cairo_image_destroy(display);
-    g_clear_object(&d->session);
-    d->gtk_session = NULL;
-
-    if (d->key_delayed_id) {
-        g_source_remove(d->key_delayed_id);
-        d->key_delayed_id = 0;
+    release_input_state(display);
+    try_mouse_ungrab(display);
+    try_keyboard_ungrab(display);
+    if (d->keyboard_have_focus)
+        update_keyboard_focus(display, FALSE);
+    if (d->mouse_have_pointer) {
+        d->mouse_have_pointer = FALSE;
+        spice_gtk_session_set_mouse_has_pointer(d->gtk_session, FALSE);
     }
+    spice_cairo_image_destroy(display);
+#ifdef HAVE_EGL
+    complete_pending_draws(display);
+    spice_dmabuf_clear_scanout(display);
+#endif
 
     G_OBJECT_CLASS(spice_display_parent_class)->dispose(obj);
+    g_clear_object(&d->session);
+    d->gtk_session = NULL;
 }
 
 static void spice_display_finalize(GObject *obj)
@@ -504,7 +914,7 @@ static void spice_display_finalize(GObject *obj)
 
 #ifdef HAVE_WAYLAND_PROTOCOLS
     GtkWidget *widget = GTK_WIDGET(display);
-    if GDK_IS_WAYLAND_DISPLAY(gtk_widget_get_display(widget))
+    if (g_object_get_data(G_OBJECT(widget), "wayland-state") != NULL)
         spice_wayland_extensions_finalize(widget);
 #endif
 
@@ -521,47 +931,10 @@ static void spice_display_finalize(GObject *obj)
 
 static GdkCursor* spice_display_get_blank_cursor(SpiceDisplay *display)
 {
-    GdkDisplay *gdk_display;
     const gchar *cursor_name;
-    GdkWindow *gdk_window = GDK_WINDOW(gtk_widget_get_window(GTK_WIDGET(display)));
-
-    if (gdk_window == NULL)
-        return NULL;
-
-    gdk_display = gdk_window_get_display(gdk_window);
     cursor_name = g_getenv("SPICE_DEBUG_CURSOR") ? "crosshair" : "none";
 
-    return gdk_cursor_new_from_name(gdk_display, cursor_name);
-}
-
-static gboolean grab_broken(SpiceDisplay *self, GdkEventGrabBroken *event,
-                            gpointer user_data G_GNUC_UNUSED)
-{
-    GdkWindow *window = gtk_widget_get_window(GTK_WIDGET(self));
-    DISPLAY_DEBUG(self, "%s (implicit: %d, keyboard: %d)", __FUNCTION__,
-                  event->implicit, event->keyboard);
-    DISPLAY_DEBUG(self, "%s (SpiceDisplay::GdkWindow %p, event->grab_window: %p)",
-                  __FUNCTION__, window, event->grab_window);
-    if (window == event->grab_window) {
-        /* ignore grab-broken event moving the grab to GtkEventBox::window
-         * (from GtkEventBox::event_window) as we initially called
-         * gdk_pointer_grab() on GtkEventBox::window, see
-         * https://bugzilla.gnome.org/show_bug.cgi?id=769635
-         */
-        return false;
-    }
-
-    if (event->keyboard) {
-        try_keyboard_ungrab(self);
-        release_keys(self);
-    }
-
-    /* always release mouse when grab broken, this could be more
-       generally placed in keyboard_ungrab(), but one might worry of
-       breaking someone else code. */
-    try_mouse_ungrab(self);
-
-    return false;
+    return gdk_cursor_new_from_name(cursor_name, NULL);
 }
 
 static void file_transfer_callback(GObject *source_object,
@@ -582,100 +955,73 @@ static void file_transfer_callback(GObject *source_object,
     g_clear_error(&error);
 }
 
-static void drag_data_received_callback(SpiceDisplay *self,
-                                        GdkDragContext *drag_context,
-                                        gint x,
-                                        gint y,
-                                        GtkSelectionData *data,
-                                        guint info,
-                                        guint time,
-                                        gpointer *user_data)
+static gboolean drop_cb(GtkDropTarget *target,
+                         const GValue *value,
+                         gdouble x,
+                         gdouble y,
+                         gpointer user_data)
 {
-    const guchar *buf;
-    gchar **file_urls;
-    int n_files;
+    SpiceDisplay *self = SPICE_DISPLAY(user_data);
     SpiceDisplayPrivate *d = self->priv;
-    int i = 0;
+    GdkFileList *file_list;
+    GSList *files_slist;
+    GSList *l;
+    int n_files;
     GFile **files;
+    int i = 0;
 
-    /* We get a buf like:
-     * file:///root/a.txt\r\nfile:///root/b.txt\r\n
-     */
-    DISPLAY_DEBUG(self, "%s: drag a file", __FUNCTION__);
-    buf = gtk_selection_data_get_data(data);
-    g_return_if_fail(buf != NULL);
+    DISPLAY_DEBUG(self, "%s: drop files", __FUNCTION__);
 
-    file_urls = g_uri_list_extract_uris((const gchar*)buf);
-    n_files = g_strv_length(file_urls);
-    files = g_new0(GFile*, n_files + 1);
-    for (i = 0; i < n_files; i++) {
-        files[i] = g_file_new_for_uri(file_urls[i]);
+    file_list = g_value_get_boxed(value);
+    g_return_val_if_fail(file_list != NULL, FALSE);
+
+    files_slist = gdk_file_list_get_files(file_list);
+    n_files = g_slist_length(files_slist);
+    if (n_files == 0)
+        return FALSE;
+
+    files = g_new0(GFile *, n_files + 1);
+    for (l = files_slist; l != NULL; l = l->next) {
+        files[i++] = g_object_ref(G_FILE(l->data));
     }
-    g_strfreev(file_urls);
 
-    spice_main_channel_file_copy_async(d->main, files, 0, NULL, NULL, NULL, file_transfer_callback,
-                                       NULL);
+    spice_main_channel_file_copy_async(d->main, files, 0, NULL, NULL, NULL,
+                                       file_transfer_callback, NULL);
     for (i = 0; i < n_files; i++) {
         g_object_unref(files[i]);
     }
     g_free(files);
 
-    gtk_drag_finish(drag_context, TRUE, FALSE, time);
-}
-
-static void grab_notify(SpiceDisplay *display, gboolean was_grabbed)
-{
-    DISPLAY_DEBUG(display, "grab notify %d", was_grabbed);
-
-    if (was_grabbed == FALSE)
-        release_keys(display);
-}
-
-#ifdef HAVE_EGL
-static gboolean
-gl_area_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data)
-{
-    SpiceDisplay *display = SPICE_DISPLAY(user_data);
-    SpiceDisplayPrivate *d = display->priv;
-
-    spice_egl_update_display(display);
-    glFlush();
-    if (d->egl.call_draw_done) {
-        spice_display_channel_gl_draw_done(d->display);
-        d->egl.call_draw_done = FALSE;
-    }
-
     return TRUE;
 }
 
 static void
-gl_area_realize(GtkGLArea *area, gpointer user_data)
-{
-    SpiceDisplay *display = SPICE_DISPLAY(user_data);
-    GError *err = NULL;
-
-    gtk_gl_area_make_current(area);
-    if (gtk_gl_area_get_error(area) != NULL)
-        return;
-
-    if (!spice_egl_init(display, &err)) {
-        g_critical("egl init failed: %s", err->message);
-        g_clear_error(&err);
-    }
-}
-#endif
-
-static void
 drawing_area_realize(GtkWidget *area, gpointer user_data)
 {
-#if defined(GDK_WINDOWING_X11) && defined(HAVE_EGL)
+#ifdef HAVE_EGL
     SpiceDisplay *display = SPICE_DISPLAY(user_data);
 
-    if (GDK_IS_X11_DISPLAY(gdk_display_get_default()) &&
+    /* GTK4: the dmabuf texture path works on any backend */
+    if (display->priv->display != NULL &&
         spice_display_channel_get_gl_scanout2(display->priv->display) != NULL) {
         spice_display_widget_gl_scanout(display);
     }
 #endif
+}
+
+static void drawing_area_resized(GtkDrawingArea *area, int width, int height,
+                                 gpointer user_data)
+{
+    SpiceDisplay *display = SPICE_DISPLAY(user_data);
+    GtkWidget *widget = GTK_WIDGET(display);
+    int widget_width = gtk_widget_get_width(widget);
+    int widget_height = gtk_widget_get_height(widget);
+    if (gtk_stack_get_visible_child(display->priv->stack) != GTK_WIDGET(area))
+        return;
+    /* The visible area receives a resize even when the guest does not repaint. */
+    size_allocate_impl(display, 0, 0,
+                       widget_width > 0 ? widget_width : width,
+                       widget_height > 0 ? widget_height : height);
 }
 
 static void spice_display_init(SpiceDisplay *display)
@@ -683,80 +1029,82 @@ static void spice_display_init(SpiceDisplay *display)
     GtkWidget *widget = GTK_WIDGET(display);
     GtkWidget *area;
     SpiceDisplayPrivate *d;
-    GtkTargetEntry targets = { "text/uri-list", 0, 0 };
 
     d = display->priv = spice_display_get_instance_private(display);
     d->stack = GTK_STACK(gtk_stack_new());
-    gtk_container_add(GTK_CONTAINER(display), GTK_WIDGET(d->stack));
-    area = gtk_drawing_area_new();
-
-    g_object_connect(area,
-                     "signal::draw", draw_event, display,
-                     "signal::realize", drawing_area_realize, display,
-                     NULL);
+    gtk_widget_set_hexpand(GTK_WIDGET(d->stack), TRUE);
+    gtk_widget_set_vexpand(GTK_WIDGET(d->stack), TRUE);
+    gtk_box_append(GTK_BOX(display), GTK_WIDGET(d->stack));
 #ifdef HAVE_EGL
-#ifdef GDK_WINDOWING_X11
-    if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
-        GError *err = NULL;
+    d->dmabuf.scanout.fd[0] = -1;
+    area = g_object_new(spice_canvas_area_get_type(), NULL);
+    ((SpiceCanvasArea *)area)->display = display;
+#else
+    area = gtk_drawing_area_new();
+#endif
 
-        if (!spice_egl_init(display, &err)) {
-            g_critical("egl init failed: %s", err->message);
-            g_clear_error(&err);
-        } else {
-            spice_egl_set_x11_window_visual(display, area);
-        }
-    }
-#endif
-#endif
+    g_signal_connect(area, "resize", G_CALLBACK(drawing_area_resized), display);
+    gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(area), draw_func, display, NULL);
+    g_signal_connect(area, "realize", G_CALLBACK(drawing_area_realize), display);
     gtk_stack_add_named(d->stack, area, "draw-area");
     gtk_stack_set_visible_child(d->stack, area);
 
-#ifdef HAVE_EGL
-    area = gtk_gl_area_new();
-    gtk_gl_area_set_required_version(GTK_GL_AREA(area), 3, 2);
-    gtk_gl_area_set_auto_render(GTK_GL_AREA(area), false);
-    g_object_connect(area,
-                     "signal::render", gl_area_render, display,
-                     "signal::realize", gl_area_realize, display,
-                     NULL);
-    gtk_stack_add_named(d->stack, area, "gl-area");
-#endif
-    area = gtk_drawing_area_new();
-    gtk_stack_add_named(d->stack, area, "gst-area");
-    g_object_connect(area,
-                     "signal::draw", gst_draw_event, display,
-                     "signal::size-allocate", gst_size_allocate, display,
-                     NULL);
 
     d->label = gtk_label_new(NULL);
     gtk_label_set_selectable(GTK_LABEL(d->label), true);
     gtk_stack_add_named(d->stack, d->label, "label");
 
-    gtk_widget_show_all(widget);
+    {
+        GtkDropTarget *drop_target;
+        drop_target = gtk_drop_target_new(GDK_TYPE_FILE_LIST, GDK_ACTION_COPY);
+        g_signal_connect(drop_target, "drop", G_CALLBACK(drop_cb), display);
+        gtk_widget_add_controller(widget, GTK_EVENT_CONTROLLER(drop_target));
+    }
 
-    g_signal_connect(display, "grab-broken-event", G_CALLBACK(grab_broken), NULL);
-    g_signal_connect(display, "grab-notify", G_CALLBACK(grab_notify), NULL);
-
-    gtk_drag_dest_set(widget, GTK_DEST_DEFAULT_ALL, &targets, 1, GDK_ACTION_COPY);
-    g_signal_connect(display, "drag-data-received",
-                     G_CALLBACK(drag_data_received_callback), NULL);
-    g_signal_connect(display, "size-allocate", G_CALLBACK(size_allocate), NULL);
-    g_signal_connect(display, "notify::scale-factor",
-                     G_CALLBACK(scale_factor_changed), NULL);
-
-    gtk_widget_add_events(widget,
-                          GDK_POINTER_MOTION_MASK |
-                          GDK_BUTTON_PRESS_MASK |
-                          GDK_BUTTON_RELEASE_MASK |
-                          GDK_BUTTON_MOTION_MASK |
-                          GDK_ENTER_NOTIFY_MASK |
-                          GDK_LEAVE_NOTIFY_MASK |
-                          GDK_KEY_PRESS_MASK |
-                          /* on Wayland, only smooth-scroll events are emitted */
-                          GDK_SMOOTH_SCROLL_MASK |
-                          GDK_SCROLL_MASK);
     gtk_widget_set_can_focus(widget, true);
-    gtk_event_box_set_above_child(GTK_EVENT_BOX(widget), true);
+    gtk_widget_set_focusable(widget, true);
+
+    /* Create event controllers.
+     * In GTK4, focus handling moves to GtkEventControllerFocus. */
+
+    /* Key controller — handles key press/release.
+     * GTK4: use CAPTURE phase so we intercept keys before child widgets,
+     * since GtkBox.grab_focus() delegates to children by default. */
+    d->key_controller = gtk_event_controller_key_new();
+    gtk_widget_add_controller(widget, d->key_controller);
+    gtk_event_controller_set_propagation_phase(d->key_controller, GTK_PHASE_CAPTURE);
+    g_signal_connect(d->key_controller, "key-pressed", G_CALLBACK(key_pressed_cb), display);
+    g_signal_connect(d->key_controller, "key-released", G_CALLBACK(key_released_cb), display);
+    {
+        GtkEventController *focus_controller = gtk_event_controller_focus_new();
+        gtk_widget_add_controller(widget, focus_controller);
+        g_signal_connect(focus_controller, "enter", G_CALLBACK(focus_in_cb), display);
+        g_signal_connect(focus_controller, "leave", G_CALLBACK(focus_out_cb), display);
+    }
+
+    /* Motion controller — handles pointer enter/leave/motion */
+    d->motion_controller = gtk_event_controller_motion_new();
+    gtk_widget_add_controller(widget, d->motion_controller);
+    gtk_event_controller_set_propagation_phase(d->motion_controller, GTK_PHASE_BUBBLE);
+    g_signal_connect(d->motion_controller, "enter", G_CALLBACK(enter_cb), display);
+    g_signal_connect(d->motion_controller, "leave", G_CALLBACK(leave_cb), display);
+    g_signal_connect(d->motion_controller, "motion", G_CALLBACK(motion_cb), display);
+
+    /* Scroll controller — handles scroll wheel events.
+     * Use VERTICAL only (not DISCRETE) so we receive raw deltas and
+     * can accumulate fractional smooth-scroll values ourselves. */
+    d->scroll_controller = gtk_event_controller_scroll_new(
+        GTK_EVENT_CONTROLLER_SCROLL_VERTICAL);
+    gtk_widget_add_controller(widget, d->scroll_controller);
+    gtk_event_controller_set_propagation_phase(d->scroll_controller, GTK_PHASE_BUBBLE);
+    g_signal_connect(d->scroll_controller, "scroll", G_CALLBACK(scroll_cb), display);
+
+    /* A click gesture tracks only one button at a time, losing chords. */
+    d->button_controller = gtk_event_controller_legacy_new();
+    gtk_widget_add_controller(widget, d->button_controller);
+    gtk_event_controller_set_propagation_phase(d->button_controller, GTK_PHASE_BUBBLE);
+    g_signal_connect(d->button_controller, "event",
+                     G_CALLBACK(button_controller_event_cb), display);
 
     d->grabseq = spice_grab_sequence_new_from_string("Control_L+Alt_L");
     d->activeseq = g_new0(gboolean, d->grabseq->nkeysyms);
@@ -774,8 +1122,6 @@ spice_display_constructed(GObject *gobject)
     SpiceDisplayPrivate *d;
     GList *list;
     GList *it;
-
-    G_OBJECT_CLASS(spice_display_parent_class)->constructed(gobject);
 
     display = SPICE_DISPLAY(gobject);
     d = display->priv;
@@ -890,21 +1236,54 @@ SpiceGrabSequence *spice_display_get_grab_keys(SpiceDisplay *display)
     return d->grabseq;
 }
 
-static GdkSeat *spice_display_get_default_seat(SpiceDisplay *display)
-{
-    GdkWindow *window = gtk_widget_get_window(GTK_WIDGET(display));
-    GdkDisplay *gdk_display = gdk_window_get_display(window);
-    return gdk_display_get_default_seat(gdk_display);
-}
 
-/* FIXME: gdk_keyboard_grab/ungrab() is deprecated */
-G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+/* Inhibition belongs to a native surface, which can contain several displays.
+ * Releasing one display must not restore another display's shortcuts. */
+static const char shortcut_requests_key[] = "spice-shortcut-requests";
+
+#ifdef GDK_WINDOWING_WAYLAND
+static void shortcuts_inhibited_changed(GObject *object,
+                                        GParamSpec *pspec G_GNUC_UNUSED,
+                                        gpointer user_data)
+{
+    SpiceDisplay *display = SPICE_DISPLAY(user_data);
+    SpiceDisplayPrivate *d = display->priv;
+    gboolean active;
+
+    if (d->shortcut_toplevel != GDK_TOPLEVEL(object))
+        return;
+    g_object_get(object, "shortcuts-inhibited", &active, NULL);
+    if (active == d->keyboard_grab_active)
+        return;
+    d->keyboard_grab_active = active;
+    g_signal_emit(display, signals[SPICE_DISPLAY_KEYBOARD_GRAB], 0, active);
+}
+#endif
+
+static void release_shortcut_inhibition(SpiceDisplay *display)
+{
+    SpiceDisplayPrivate *d = display->priv;
+    GdkToplevel *toplevel = g_steal_pointer(&d->shortcut_toplevel);
+    guint requests;
+
+    if (toplevel == NULL)
+        return;
+    g_signal_handler_disconnect(toplevel, d->shortcut_notify_id);
+    d->shortcut_notify_id = 0;
+    requests = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(toplevel), shortcut_requests_key));
+    g_assert(requests > 0);
+    g_object_set_data(G_OBJECT(toplevel), shortcut_requests_key,
+                      GUINT_TO_POINTER(requests - 1));
+    if (requests == 1)
+        gdk_toplevel_restore_system_shortcuts(toplevel);
+    g_object_unref(toplevel);
+}
 
 static void try_keyboard_grab(SpiceDisplay *display)
 {
     GtkWidget *widget = GTK_WIDGET(display);
     SpiceDisplayPrivate *d = display->priv;
-    GdkGrabStatus status;
+    gboolean status;
 
     if (g_getenv("SPICE_NOGRAB"))
         return;
@@ -915,11 +1294,12 @@ static void try_keyboard_grab(SpiceDisplay *display)
         return;
     if (!d->keyboard_grab_enable)
         return;
-    if (d->keyboard_grab_active)
+    if (d->keyboard_grab_active || d->shortcut_toplevel != NULL)
         return;
-#ifdef G_OS_WIN32
+    /* Focus controllers run before GtkRoot commits its focus widget. */
     if (!d->keyboard_have_focus)
         return;
+#ifdef G_OS_WIN32
     if (!d->mouse_have_pointer)
         return;
 #else
@@ -931,10 +1311,9 @@ static void try_keyboard_grab(SpiceDisplay *display)
     if (d->keyboard_grab_released)
         return;
 
-    g_return_if_fail(gtk_widget_is_focus(widget));
-
     DISPLAY_DEBUG(display, "grab keyboard");
-    gtk_widget_grab_focus(widget);
+    if (!gtk_widget_get_mapped(widget) || get_widget_surface(widget) == NULL)
+        return;
 
 #ifdef G_OS_WIN32
     if (d->keyboard_hook == NULL)
@@ -942,16 +1321,32 @@ static void try_keyboard_grab(SpiceDisplay *display)
                                             GetModuleHandle(NULL), 0);
     g_warn_if_fail(d->keyboard_hook != NULL);
 #endif
-    status = gdk_seat_grab(spice_display_get_default_seat(display),
-                           gtk_widget_get_window(widget),
-                           GDK_SEAT_CAPABILITY_KEYBOARD,
-                           FALSE,
-                           NULL,
-                           NULL,
-                           NULL,
-                           NULL);
-    if (status != GDK_GRAB_SUCCESS) {
-        g_warning("keyboard grab failed %u", status);
+    {
+        GdkDisplay *gdk_display = gtk_widget_get_display(widget);
+        GdkSurface *surface = get_widget_surface(widget);
+        status = grab_keyboard(gdk_display, surface);
+    }
+#ifdef GDK_WINDOWING_WAYLAND
+    if (GDK_IS_WAYLAND_DISPLAY(gtk_widget_get_display(widget))) {
+        GdkSurface *surface = get_widget_surface(widget);
+        guint requests;
+
+        if (!GDK_IS_TOPLEVEL(surface))
+            return;
+        d->shortcut_toplevel = g_object_ref(GDK_TOPLEVEL(surface));
+        d->shortcut_notify_id = g_signal_connect(surface, "notify::shortcuts-inhibited",
+                                                 G_CALLBACK(shortcuts_inhibited_changed), display);
+        requests = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(surface), shortcut_requests_key));
+        g_object_set_data(G_OBJECT(surface), shortcut_requests_key,
+                          GUINT_TO_POINTER(requests + 1));
+        if (requests == 0)
+            gdk_toplevel_inhibit_system_shortcuts(d->shortcut_toplevel, NULL);
+        shortcuts_inhibited_changed(G_OBJECT(surface), NULL, display);
+        return;
+    }
+#endif
+    if (!status) {
+        g_warning("keyboard grab failed");
         d->keyboard_grab_active = false;
     } else {
         d->keyboard_grab_active = true;
@@ -961,46 +1356,14 @@ static void try_keyboard_grab(SpiceDisplay *display)
 
 static void ungrab_keyboard(SpiceDisplay *display)
 {
-    GdkSeat *seat = spice_display_get_default_seat(display);
-    GdkDevice *keyboard = gdk_seat_get_keyboard(seat);
+    GdkDisplay *gdk_display = gtk_widget_get_display(GTK_WIDGET(display));
 
-#ifdef GDK_WINDOWING_WAYLAND
-    /* On Wayland, use the GdkSeat API alone.
-     * We simply issue a gdk_seat_ungrab() followed immediately by another
-     * gdk_seat_grab() on the pointer if the pointer grab is to be kept.
+    /* In GTK4, we can ungrab just the keyboard independently via
+     * platform-specific APIs (XIUngrabDevice on X11, or release
+     * the keyboard shortcuts inhibitor on Wayland).
      */
-    if (GDK_IS_WAYLAND_DISPLAY(gtk_widget_get_display(GTK_WIDGET(display)))) {
-        SpiceDisplayPrivate *d = display->priv;
-
-        gdk_seat_ungrab(seat);
-
-        if (d->mouse_grab_active) {
-            GdkGrabStatus status;
-            GdkCursor *blank = spice_display_get_blank_cursor(display);
-
-            status = gdk_seat_grab(seat,
-                                   gtk_widget_get_window(GTK_WIDGET(display)),
-                                   GDK_SEAT_CAPABILITY_ALL_POINTING,
-                                   TRUE,
-                                   blank,
-                                   NULL,
-                                   NULL,
-                                   NULL);
-            if (status != GDK_GRAB_SUCCESS) {
-                g_warning("pointer grab failed %u", status);
-                d->mouse_grab_active = false;
-            }
-        }
-
-        return;
-    }
-#endif
-
-    G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-    /* we want to ungrab just the keyboard - it is not possible using gdk_seat_ungrab().
-       See also https://bugzilla.gnome.org/show_bug.cgi?id=780133 */
-    gdk_device_ungrab(keyboard, GDK_CURRENT_TIME);
-    G_GNUC_END_IGNORE_DEPRECATIONS
+    ungrab_keyboard_device(gdk_display);
+    release_shortcut_inhibition(display);
 }
 
 static void try_keyboard_ungrab(SpiceDisplay *display)
@@ -1008,7 +1371,7 @@ static void try_keyboard_ungrab(SpiceDisplay *display)
     SpiceDisplayPrivate *d = display->priv;
     GtkWidget *widget = GTK_WIDGET(display);
 
-    if (!d->keyboard_grab_active)
+    if (!d->keyboard_grab_active && d->shortcut_toplevel == NULL)
         return;
 
     DISPLAY_DEBUG(display, "ungrab keyboard");
@@ -1020,10 +1383,11 @@ static void try_keyboard_ungrab(SpiceDisplay *display)
         d->keyboard_hook = NULL;
     }
 #endif
-    d->keyboard_grab_active = false;
-    g_signal_emit(widget, signals[SPICE_DISPLAY_KEYBOARD_GRAB], 0, false);
+    if (d->keyboard_grab_active) {
+        d->keyboard_grab_active = false;
+        g_signal_emit(widget, signals[SPICE_DISPLAY_KEYBOARD_GRAB], 0, false);
+    }
 }
-G_GNUC_END_IGNORE_DEPRECATIONS
 
 
 static void update_keyboard_grab(SpiceDisplay *display)
@@ -1042,14 +1406,14 @@ static void set_mouse_accel(SpiceDisplay *display, gboolean enabled)
 {
 #if defined GDK_WINDOWING_X11
     SpiceDisplayPrivate *d = display->priv;
-    GdkWindow *w = GDK_WINDOW(gtk_widget_get_window(GTK_WIDGET(display)));
+    GdkSurface *w = get_widget_surface(GTK_WIDGET(display));
 
-    if (!GDK_IS_X11_DISPLAY(gdk_window_get_display(w))) {
+    if (!GDK_IS_X11_DISPLAY(gdk_surface_get_display(w))) {
         DISPLAY_DEBUG(display, "FIXME: gtk backend is not X11");
         return;
     }
 
-    Display *x_display = GDK_WINDOW_XDISPLAY(w);
+    Display *x_display = GDK_SURFACE_XDISPLAY(w);
     if (enabled) {
         /* restore mouse acceleration */
         XChangePointerControl(x_display, True, True,
@@ -1161,8 +1525,8 @@ static gboolean do_pointer_grab(SpiceDisplay *display)
 {
     GtkWidget *widget = GTK_WIDGET(display);
     SpiceDisplayPrivate *d = display->priv;
-    GdkWindow *window = GDK_WINDOW(gtk_widget_get_window(widget));
-    GdkGrabStatus status;
+    GdkSurface *surface = get_widget_surface(widget);
+    gboolean status;
     GdkCursor *blank = spice_display_get_blank_cursor(display);
     gboolean grab_successful = FALSE;
 
@@ -1175,26 +1539,30 @@ static gboolean do_pointer_grab(SpiceDisplay *display)
 #endif
 
     try_keyboard_grab(display);
-    status = gdk_seat_grab(spice_display_get_default_seat(display),
-                           window,
-                           GDK_SEAT_CAPABILITY_ALL_POINTING,
-                           TRUE,
-                           blank,
-                           NULL,
-                           NULL,
-                           NULL);
+    {
+        GdkDisplay *gdk_display = gtk_widget_get_display(widget);
+        status = grab_pointer(gdk_display, surface, blank);
+    }
 
-#ifdef HAVE_WAYLAND_PROTOCOLS
+#ifdef GDK_WINDOWING_WAYLAND
     if (GDK_IS_WAYLAND_DISPLAY(gtk_widget_get_display(widget))) {
-        spice_wayland_extensions_enable_relative_pointer(widget, relative_pointer_handle_relative_motion);
-        spice_wayland_extensions_lock_pointer(widget, NULL, NULL);
+#ifdef HAVE_WAYLAND_PROTOCOLS
+        if (spice_wayland_extensions_enable_relative_pointer(widget,
+                relative_pointer_handle_relative_motion) != 0 ||
+            spice_wayland_extensions_lock_pointer(widget, NULL, NULL) != 0) {
+            spice_wayland_extensions_disable_relative_pointer(widget);
+            spice_wayland_extensions_unlock_pointer(widget);
+            goto end;
+        }
+#else
+        goto end; /* no Wayland pointer constraints available */
+#endif
     }
 #endif
-
-    grab_successful = (status == GDK_GRAB_SUCCESS);
+    grab_successful = status;
     if (!grab_successful) {
         d->mouse_grab_active = false;
-        g_warning("pointer grab failed %u", status);
+        g_warning("pointer grab failed");
     } else {
         d->mouse_grab_active = true;
         g_signal_emit(display, signals[SPICE_DISPLAY_MOUSE_GRAB], 0, true);
@@ -1210,19 +1578,19 @@ end:
 static void update_mouse_pointer(SpiceDisplay *display)
 {
     SpiceDisplayPrivate *d = display->priv;
-    GdkWindow *window = GDK_WINDOW(gtk_widget_get_window(GTK_WIDGET(display)));
+    GdkSurface *surface = get_widget_surface(GTK_WIDGET(display));
 
-    if (!window)
+    if (!surface)
         return;
 
     switch (d->mouse_mode) {
     case SPICE_MOUSE_MODE_CLIENT:
-        if (gdk_window_get_cursor(window) != d->mouse_cursor)
-            gdk_window_set_cursor(window, d->mouse_cursor);
+        if (gtk_widget_get_cursor(GTK_WIDGET(display)) != d->mouse_cursor)
+            gtk_widget_set_cursor(GTK_WIDGET(display), d->mouse_cursor);
         break;
     case SPICE_MOUSE_MODE_SERVER:
-        if (gdk_window_get_cursor(window) != NULL)
-            gdk_window_set_cursor(window, NULL);
+        if (gtk_widget_get_cursor(GTK_WIDGET(display)) != NULL)
+            gtk_widget_set_cursor(GTK_WIDGET(display), NULL);
         break;
     default:
         g_warn_if_reached();
@@ -1258,7 +1626,7 @@ static void try_mouse_grab(SpiceDisplay *display)
     d->mouse_last_y = -1;
 }
 
-static void mouse_warp(SpiceDisplay *display, GdkEventMotion *motion)
+static void mouse_warp(SpiceDisplay *display, gdouble x_root, gdouble y_root)
 {
     SpiceDisplayPrivate *d = display->priv;
     gint xr, yr;
@@ -1274,26 +1642,25 @@ static void mouse_warp(SpiceDisplay *display, GdkEventMotion *motion)
     d->mouse_last_y = -1;
 #else
     GdkRectangle geom;
-    GdkWindow *gdk_window = gtk_widget_get_window(GTK_WIDGET(display));
-    GdkDisplay *gdk_display = gdk_window_get_display(gdk_window);
-    GdkMonitor *monitor = gdk_display_get_primary_monitor(gdk_display);
+    GdkSurface *surface = get_widget_surface(GTK_WIDGET(display));
+    GdkDisplay *gdk_display = gdk_surface_get_display(surface);
+    GdkMonitor *monitor = get_primary_monitor(gdk_display);
     if (monitor == NULL) {
         /* No primary monitor set, using last mouse coordinates */
-        monitor = gdk_display_get_monitor_at_point(gdk_display, d->mouse_last_x, d->mouse_last_y);
+        monitor = get_monitor_at_point(gdk_display, d->mouse_last_x, d->mouse_last_y);
     }
     g_return_if_fail(monitor != NULL);
     gdk_monitor_get_geometry(monitor, &geom);
+    g_object_unref(monitor);
 
     xr = geom.width / 2;
     yr = geom.height / 2;
 
-    if (xr != (gint)motion->x_root || yr != (gint)motion->y_root) {
+    if (xr != (gint)x_root || yr != (gint)y_root) {
         /* FIXME: we try our best to ignore that next pointer move event.. */
         gdk_display_sync(gdk_display);
 
-        gdk_device_warp(spice_gdk_window_get_pointing_device(gdk_window),
-                        gdk_window_get_screen(gdk_window),
-                        xr, yr);
+        device_warp(gdk_display, xr, yr);
         d->mouse_last_x = -1;
         d->mouse_last_y = -1;
     }
@@ -1303,56 +1670,21 @@ static void mouse_warp(SpiceDisplay *display, GdkEventMotion *motion)
 
 static void ungrab_pointer(SpiceDisplay *display)
 {
-    GdkSeat *seat = spice_display_get_default_seat(display);
-    GdkDevice *pointer = gdk_seat_get_pointer(seat);
+    GdkDisplay *gdk_display = gtk_widget_get_display(GTK_WIDGET(display));
 
-#ifdef GDK_WINDOWING_WAYLAND
-    /* On Wayland, mixing the GdkSeat and the GdkDevice APIs leave the
-     * cursor unchanged because the GDK Wayland backend keeps a reference
-     * of the cursor set previously using gdk_seat_grab() attached to the
-     * GdkSeat.
-     * To avoid that issue, we simply issue a gdk_seat_ungrab() followed
-     * immediately by another gdk_seat_grab() on the keyboard if the
-     * keyboard grab is to be kept.
+    /* In GTK4, we can ungrab just the pointer independently via
+     * platform-specific APIs (XIUngrabDevice on X11).  On Wayland,
+     * pointer unlock is done separately via wayland-extensions.
      */
-    if (GDK_IS_WAYLAND_DISPLAY(gtk_widget_get_display(GTK_WIDGET(display)))) {
-        GtkWidget *widget = GTK_WIDGET(display);
-        SpiceDisplayPrivate *d = display->priv;
+    ungrab_pointer_device(gdk_display);
 
-        gdk_seat_ungrab(seat);
-
-        if (d->keyboard_grab_active) {
-            GdkGrabStatus status;
-
-            status = gdk_seat_grab(seat,
-                                   gtk_widget_get_window(widget),
-                                   GDK_SEAT_CAPABILITY_KEYBOARD,
-                                   FALSE,
-                                   NULL,
-                                   NULL,
-                                   NULL,
-                                   NULL);
-            if (status != GDK_GRAB_SUCCESS) {
-                g_warning("keyboard grab failed %u", status);
-                d->keyboard_grab_active = false;
-            }
-        }
 #ifdef HAVE_WAYLAND_PROTOCOLS
-        if (d->mouse_mode == SPICE_MOUSE_MODE_SERVER) {
-            spice_wayland_extensions_disable_relative_pointer(widget);
-            spice_wayland_extensions_unlock_pointer(widget);
-        }
-#endif
-
-        return;
+    if (GDK_IS_WAYLAND_DISPLAY(gdk_display)) {
+        GtkWidget *widget = GTK_WIDGET(display);
+        spice_wayland_extensions_disable_relative_pointer(widget);
+        spice_wayland_extensions_unlock_pointer(widget);
     }
 #endif
-
-    G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-    /* we want to ungrab just the pointer - it is not possible using gdk_seat_ungrab().
-       See also https://bugzilla.gnome.org/show_bug.cgi?id=780133 */
-    gdk_device_ungrab(pointer, GDK_CURRENT_TIME);
-    G_GNUC_END_IGNORE_DEPRECATIONS
 }
 
 static void try_mouse_ungrab(SpiceDisplay *display)
@@ -1360,33 +1692,31 @@ static void try_mouse_ungrab(SpiceDisplay *display)
     SpiceDisplayPrivate *d = display->priv;
     double s;
     int x, y;
-    gint scale_factor;
-    GdkWindow *window;
+    double surface_scale;
+    GdkSurface *surface;
 
     if (!d->mouse_grab_active)
         return;
 
     ungrab_pointer(display);
-    gtk_grab_remove(GTK_WIDGET(display));
 #ifdef G_OS_WIN32
     ClipCursor(NULL);
 #endif
-    set_mouse_accel(display, TRUE);
+    surface = get_widget_surface(GTK_WIDGET(display));
+    if (surface != NULL)
+        set_mouse_accel(display, TRUE);
 
     d->mouse_grab_active = false;
 
-    scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(display));
-    spice_display_get_scaling(display, &s, &x, &y, NULL, NULL);
-
-    window = gtk_widget_get_window(GTK_WIDGET(display));
-    gdk_window_get_root_coords(window,
-                               (x + d->mouse_guest_x * s) / scale_factor,
-                               (y + d->mouse_guest_y * s) / scale_factor,
-                               &x, &y);
-
-    gdk_device_warp(spice_gdk_window_get_pointing_device(window),
-                    gtk_widget_get_screen(GTK_WIDGET(display)),
-                    x, y);
+    if (surface != NULL && d->mouse_guest_x >= 0 && d->mouse_guest_y >= 0) {
+        surface_scale = spice_display_get_surface_scale(display);
+        spice_display_get_scaling(display, &s, &x, &y, NULL, NULL);
+        surface_get_root_coords(surface,
+                                (x + d->mouse_guest_x * s) / surface_scale,
+                                (y + d->mouse_guest_y * s) / surface_scale,
+                                &x, &y);
+        device_warp(gdk_surface_get_display(surface), x, y);
+    }
 
     g_signal_emit(display, signals[SPICE_DISPLAY_MOUSE_GRAB], 0, false);
     spice_gtk_session_set_pointer_grabbed(d->gtk_session, false);
@@ -1409,44 +1739,45 @@ static void recalc_geometry(GtkWidget *widget)
     SpiceDisplay *display = SPICE_DISPLAY(widget);
     SpiceDisplayPrivate *d = display->priv;
     gdouble zoom = 1.0;
-    gint scale_factor, height_mm = 0, width_mm = 0;
+    double surface_scale = spice_display_get_surface_scale(display);
+    gint height_mm = 0, width_mm = 0;
     bool has_display_mm = false;
 
     if (spice_allow_scaling(display))
         zoom = (gdouble)d->zoom_level / 100;
 
-    scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(display));
-
-    if (gtk_widget_get_window(widget)) {
+    if (get_widget_surface(widget)) {
         GdkRectangle geometry;
         GdkMonitor *monitor =
-            gdk_display_get_monitor_at_window(gtk_widget_get_display(widget),
-                                              gtk_widget_get_window(widget));
-        height_mm = gdk_monitor_get_height_mm(monitor);
-        width_mm = gdk_monitor_get_width_mm(monitor);
-        gdk_monitor_get_geometry(monitor, &geometry);
-        /* FIXME: gives wrong results atm: https://gitlab.gnome.org/GNOME/gtk/-/issues/3066 */
-        if (geometry.width > 0 && geometry.height > 0) {
-            width_mm = (width_mm * d->ww / geometry.width) / zoom * scale_factor;
-            height_mm = (height_mm * d->wh / geometry.height) / zoom * scale_factor;
-            has_display_mm = true;
+            gdk_display_get_monitor_at_surface(gtk_widget_get_display(widget),
+                                               get_widget_surface(widget));
+        if (monitor != NULL) {
+            height_mm = gdk_monitor_get_height_mm(monitor);
+            width_mm = gdk_monitor_get_width_mm(monitor);
+            gdk_monitor_get_geometry(monitor, &geometry);
+            /* FIXME: gives wrong results atm: https://gitlab.gnome.org/GNOME/gtk/-/issues/3066 */
+            if (geometry.width > 0 && geometry.height > 0) {
+                width_mm = (width_mm * d->ww / geometry.width) / zoom * surface_scale;
+                height_mm = (height_mm * d->wh / geometry.height) / zoom * surface_scale;
+                has_display_mm = true;
+            }
         }
     }
 
     DISPLAY_DEBUG(display,
-                  "recalc geom: guest +%d+%d:%dx%d, window %dx%d, zoom %g, scale %d, dim %dx%dmm",
+                  "recalc geom: guest +%d+%d:%dx%d, window %dx%d, zoom %g, scale %g, dim %dx%dmm",
                   d->area.x, d->area.y, d->area.width, d->area.height,
-                  d->ww, d->wh, zoom, scale_factor, width_mm, height_mm);
+                  d->ww, d->wh, zoom, surface_scale, width_mm, height_mm);
 
-    if (d->resize_guest_enable) {
+    if (d->resize_guest_enable && d->main != NULL && d->ww > 0 && d->wh > 0) {
         if (has_display_mm) {
             spice_main_channel_update_display_mm(d->main, get_display_id(display),
                                                  width_mm, height_mm, TRUE);
         }
         spice_main_channel_update_display(d->main, get_display_id(display),
                                           d->area.x, d->area.y,
-                                          d->ww * scale_factor / zoom,
-                                          d->wh * scale_factor / zoom, TRUE);
+                                          spice_display_physical_size(d->ww, surface_scale / zoom),
+                                          spice_display_physical_size(d->wh, surface_scale / zoom), TRUE);
     }
 }
 
@@ -1504,50 +1835,27 @@ static gboolean do_color_convert(SpiceDisplay *display, GdkRectangle *r)
 }
 
 #ifdef HAVE_EGL
-static void set_egl_enabled(SpiceDisplay *display, bool enabled)
+static void set_dmabuf_enabled(SpiceDisplay *display, bool enabled)
 {
     SpiceDisplayPrivate *d = display->priv;
 
-    if (egl_enabled(d) == enabled)
-        return;
+    /* Keep the native renderer visible when switching framebuffer modes. */
+    if (enabled || dmabuf_enabled(d) != enabled)
+        gtk_stack_set_visible_child_name(d->stack, "draw-area");
 
-#ifdef GDK_WINDOWING_X11
-    if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
-        /* even though the function is marked as deprecated, it's the
-         * only way I found to prevent glitches when the window is
-         * resized. */
-        GtkWidget *area = gtk_stack_get_child_by_name(d->stack, "draw-area");
-        G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-        gtk_widget_set_double_buffered(GTK_WIDGET(area), !enabled);
-        G_GNUC_END_IGNORE_DEPRECATIONS
-    } else
-#endif
-    {
-        gtk_stack_set_visible_child_name(d->stack,
-                                         enabled ? "gl-area" : "draw-area");
-    }
-
-    if (enabled && d->egl.context_ready) {
-        gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(display));
-        spice_egl_resize_display(display, d->ww * scale_factor, d->wh * scale_factor);
-    }
-
-    d->egl.enabled = enabled;
+    d->dmabuf.enabled = enabled;
 }
 #endif
 
-static gboolean draw_event(GtkWidget *widget, cairo_t *cr, gpointer data)
+static gboolean draw_event_impl(SpiceDisplay *display, cairo_t *cr)
 {
-    SpiceDisplay *display = SPICE_DISPLAY(data);
     SpiceDisplayPrivate *d = display->priv;
     g_return_val_if_fail(d != NULL, false);
 
 #ifdef HAVE_EGL
-    if (egl_enabled(d) &&
-        g_str_equal(gtk_stack_get_visible_child_name(d->stack), "draw-area")) {
-        spice_egl_update_display(display);
+    /* The scanout is rendered by SpiceCanvasArea.snapshot, not Cairo. */
+    if (dmabuf_enabled(d))
         return false;
-    }
 #endif
 
     if (d->mark == 0 || d->canvas.data == NULL ||
@@ -1558,6 +1866,12 @@ static gboolean draw_event(GtkWidget *widget, cairo_t *cr, gpointer data)
     update_mouse_pointer(display);
 
     return true;
+}
+
+static void draw_func(GtkDrawingArea *area, cairo_t *cr,
+                       int width, int height, gpointer data)
+{
+    draw_event_impl(SPICE_DISPLAY(data), cr);
 }
 
 /* ---------------------------------------------------------------- */
@@ -1588,7 +1902,7 @@ static gboolean key_press_delayed(gpointer data)
     SpiceDisplayPrivate *d = display->priv;
 
     if (d->key_delayed_scancode == 0)
-        return G_SOURCE_REMOVE;
+        return FALSE;
 
     spice_inputs_channel_key_press(d->inputs, d->key_delayed_scancode);
     d->key_delayed_scancode = 0;
@@ -1598,7 +1912,7 @@ static gboolean key_press_delayed(gpointer data)
         d->key_delayed_id = 0;
     }
 
-    return G_SOURCE_REMOVE;
+    return FALSE;
 }
 
 static bool send_pause(SpiceDisplay *display, GdkEventType type)
@@ -1627,11 +1941,15 @@ static void send_key(SpiceDisplay *display, int scancode, SendKeyType type, gboo
 
     g_return_if_fail(scancode != 0);
 
-    if (!d->inputs)
+    if (!d->inputs) {
+        g_warning("send_key: no inputs channel!");
         return;
+    }
 
-    if (d->disable_inputs)
+    if (d->disable_inputs) {
+        g_warning("send_key: inputs disabled!");
         return;
+    }
 
     i = scancode / 32;
     b = scancode % 32;
@@ -1649,19 +1967,21 @@ static void send_key(SpiceDisplay *display, int scancode, SendKeyType type, gboo
             g_warn_if_fail(d->key_delayed_id == 0);
             d->key_delayed_id = g_timeout_add(d->keypress_delay, key_press_delayed, display);
             d->key_delayed_scancode = scancode;
-        } else
+        } else {
             spice_inputs_channel_key_press(d->inputs, scancode);
+        }
 
         d->key_state[i] |= m;
         break;
 
     case SEND_KEY_RELEASE:
-        if (!(d->key_state[i] & m))
+        if (!(d->key_state[i] & m)) {
             break;
+        }
 
-        if (d->key_delayed_scancode == scancode)
+        if (d->key_delayed_scancode == scancode) {
             key_press_and_release(display);
-        else {
+        } else {
             /* ensure delayed key is pressed before other key are released */
             key_press_delayed(display);
             spice_inputs_channel_key_release(d->inputs, scancode);
@@ -1742,7 +2062,7 @@ static void update_display(SpiceDisplay *display)
 {
 #ifdef G_OS_WIN32
     win32_window = display ?
-                        gdk_win32_window_get_impl_hwnd(gtk_widget_get_window(GTK_WIDGET(display))) :
+                        gdk_win32_surface_get_impl_hwnd(get_widget_surface(GTK_WIDGET(display))) :
                         NULL;
     if(win32_window) {
         SpiceDisplayPrivate *d = display->priv;
@@ -1753,20 +2073,37 @@ static void update_display(SpiceDisplay *display)
 #endif
 }
 
-static gboolean key_event(GtkWidget *widget, GdkEventKey *key)
+static gboolean key_event_cb(SpiceDisplay *display, GdkEventType type,
+                             guint keyval, guint hardware_keycode,
+                             GdkModifierType state,
+                             GtkEventController *controller)
 {
-    SpiceDisplay *display = SPICE_DISPLAY(widget);
     SpiceDisplayPrivate *d = display->priv;
+    GtkWidget *widget = GTK_WIDGET(display);
     int scancode = 0;
+    gboolean is_modifier = FALSE;
+    int group = 0;
 #ifdef G_OS_WIN32
     int native_scancode;
     WORD langid = LOWORD(GetKeyboardLayout(0));
     gboolean no_key_release = FALSE;
 #endif
 
+    /* Retrieve is_modifier and group from the underlying GdkEvent */
+    {
+        GdkEvent *event = (GdkEvent *)gtk_event_controller_get_current_event(controller);
+        if (event) {
+            is_modifier = key_event_is_modifier(event);
+            group = gdk_key_event_get_layout(event);
+        }
+    }
+
 #ifdef G_OS_WIN32
-    /* Try to get scancode with gdk_event_get_scancode. */
-    native_scancode = gdk_event_get_scancode((GdkEvent *) key);
+    {
+        /* Try to get scancode with gdk_event_get_scancode. */
+        GdkEvent *event = (GdkEvent *)gtk_event_controller_get_current_event(controller);
+        native_scancode = event ? gdk_event_get_scancode(event) : 0;
+    }
     if (native_scancode) {
         scancode = native_scancode & 0x1ff;
         /* Windows always set extended attribute for these keys */
@@ -1775,22 +2112,22 @@ static gboolean key_event(GtkWidget *widget, GdkEventKey *key)
     }
 
     /* on windows, we ought to ignore the reserved key event? */
-    if (!native_scancode && key->hardware_keycode == 0xff)
+    if (!native_scancode && hardware_keycode == 0xff)
         return false;
 
     if (!d->keyboard_grab_active) {
-        if (key->hardware_keycode == VK_LWIN ||
-            key->hardware_keycode == VK_RWIN ||
-            key->hardware_keycode == VK_APPS)
+        if (hardware_keycode == VK_LWIN ||
+            hardware_keycode == VK_RWIN ||
+            hardware_keycode == VK_APPS)
             return false;
     }
 
 #endif
     DISPLAY_DEBUG(display, "%s %s: keycode: %d  state: %u  group %d modifier %d",
-                  __FUNCTION__, key->type == GDK_KEY_PRESS ? "press" : "release",
-                  key->hardware_keycode, key->state, key->group, key->is_modifier);
+                  __FUNCTION__, type == GDK_KEY_PRESS ? "press" : "release",
+                  hardware_keycode, state, group, is_modifier);
 
-    if (!d->seq_pressed && check_for_grab_key_pressed(display, key->type, key->keyval)) {
+    if (!d->seq_pressed && check_for_grab_key_pressed(display, type, keyval)) {
         g_signal_emit(widget, signals[SPICE_DISPLAY_GRAB_KEY_PRESSED], 0);
 
         if (d->mouse_mode == SPICE_MOUSE_MODE_SERVER) {
@@ -1800,7 +2137,7 @@ static gboolean key_event(GtkWidget *widget, GdkEventKey *key)
                 try_mouse_grab(display);
         }
         d->seq_pressed = TRUE;
-    } else if (d->seq_pressed && check_for_grab_key_released(display, key->type, key->keyval)) {
+    } else if (d->seq_pressed && check_for_grab_key_released(display, type, keyval)) {
         release_keys(display);
         if (!d->keyboard_grab_released) {
             d->keyboard_grab_released = TRUE;
@@ -1812,18 +2149,20 @@ static gboolean key_event(GtkWidget *widget, GdkEventKey *key)
         d->seq_pressed = FALSE;
     }
 
-    if (!d->inputs)
+    if (!d->inputs) {
+        g_warning("key_event_cb: no inputs channel, dropping key");
         return true;
+    }
 
-    if (key->keyval == GDK_KEY_Pause) {
-        return send_pause(display, key->type);
+    if (keyval == GDK_KEY_Pause) {
+        return send_pause(display, type);
     }
     if (!scancode)
         scancode = vnc_display_keymap_gdk2xtkbd(d->keycode_map, d->keycode_maplen,
-                                                key->hardware_keycode);
+                                                hardware_keycode);
 #ifdef G_OS_WIN32
     if (!native_scancode) {
-        native_scancode = MapVirtualKey(key->hardware_keycode, MAPVK_VK_TO_VSC);
+        native_scancode = MapVirtualKey(hardware_keycode, MAPVK_VK_TO_VSC);
         /* MapVirtualKey doesn't return scancode with needed higher byte */
         scancode = native_scancode | (scancode & 0xff00);
     }
@@ -1832,7 +2171,7 @@ static gboolean key_event(GtkWidget *widget, GdkEventKey *key)
     switch (langid) {
     case MAKELANGID(LANG_JAPANESE, SUBLANG_JAPANESE_JAPAN):
         if (native_scancode == 0) {
-            switch (key->hardware_keycode) {
+            switch (hardware_keycode) {
             case VK_DBE_DBCSCHAR:       /* from Pressed Zenkaku_Hankaku */
             case VK_KANJI:              /* from Alt + Zenkaku_Hankaku */
             case VK_DBE_ENTERIMECONFIGMODE:
@@ -1860,7 +2199,7 @@ static gboolean key_event(GtkWidget *widget, GdkEventKey *key)
         }
         break;
     case MAKELANGID(LANG_KOREAN, SUBLANG_KOREAN):
-        if (key->hardware_keycode == VK_HANGUL && native_scancode == DIK_LALT) {
+        if (hardware_keycode == VK_HANGUL && native_scancode == DIK_LALT) {
             /* Left Alt (VK_MENU) has the scancode DIK_LALT (0x38) but
              * Hangul (VK_HANGUL) has the scancode 0x138
              */
@@ -1900,7 +2239,7 @@ static gboolean key_event(GtkWidget *widget, GdkEventKey *key)
      */
     switch (langid) {
     case MAKELANGID(LANG_JAPANESE, SUBLANG_JAPANESE_JAPAN):
-        switch (key->hardware_keycode) {
+        switch (hardware_keycode) {
         case VK_KANJI:                  /* Alt + Zenkaku_Hankaku */
         case VK_DBE_ALPHANUMERIC:       /* Eisu_toggle */
         case VK_DBE_HIRAGANA:           /* Hiragana_Katakana */
@@ -1913,16 +2252,16 @@ static gboolean key_event(GtkWidget *widget, GdkEventKey *key)
     }
 #endif
 
-    switch (key->type) {
+    switch (type) {
     case GDK_KEY_PRESS:
-        send_key(display, scancode, SEND_KEY_PRESS, !key->is_modifier);
+        send_key(display, scancode, SEND_KEY_PRESS, !is_modifier);
 #ifdef G_OS_WIN32
         if (no_key_release)
-            send_key(display, scancode, SEND_KEY_RELEASE, !key->is_modifier);
+            send_key(display, scancode, SEND_KEY_RELEASE, !is_modifier);
 #endif
         break;
     case GDK_KEY_RELEASE:
-        send_key(display, scancode, SEND_KEY_RELEASE, !key->is_modifier);
+        send_key(display, scancode, SEND_KEY_RELEASE, !is_modifier);
         break;
     default:
         g_warn_if_reached();
@@ -1932,24 +2271,51 @@ static gboolean key_event(GtkWidget *widget, GdkEventKey *key)
     return true;
 }
 
+static gboolean key_pressed_cb(GtkEventControllerKey *controller,
+                                guint keyval, guint keycode,
+                                GdkModifierType state, gpointer user_data)
+{
+    return key_event_cb(SPICE_DISPLAY(user_data), GDK_KEY_PRESS,
+                        keyval, keycode, state,
+                        GTK_EVENT_CONTROLLER(controller));
+}
+
+static void key_released_cb(GtkEventControllerKey *controller,
+                             guint keyval, guint keycode,
+                             GdkModifierType state, gpointer user_data)
+{
+    key_event_cb(SPICE_DISPLAY(user_data), GDK_KEY_RELEASE,
+                 keyval, keycode, state,
+                 GTK_EVENT_CONTROLLER(controller));
+}
+
 static guint get_scancode_from_keyval(SpiceDisplay *display, guint keyval)
 {
     SpiceDisplayPrivate *d = display->priv;
     guint keycode = 0;
     GdkKeymapKey *keys = NULL;
     gint n_keys = 0;
-    GdkKeymap *keymap = gdk_keymap_get_for_display(gdk_display_get_default());
+    guint scancode;
 
-    if (gdk_keymap_get_entries_for_keyval(keymap, keyval, &keys, &n_keys)) {
+    if (gdk_display_map_keyval(gdk_display_get_default(), keyval, &keys, &n_keys) && n_keys > 0 && keys != NULL) {
         /* FIXME what about levels? */
         keycode = keys[0].keycode;
         g_free(keys);
+        scancode = vnc_display_keymap_gdk2xtkbd(d->keycode_map, d->keycode_maplen, keycode);
+        if (scancode != 0)
+            return scancode;
     } else {
-        g_warning("could not lookup keyval %u, please report a bug", keyval);
-        return 0;
+        g_free(keys);
     }
 
-    return vnc_display_keymap_gdk2xtkbd(d->keycode_map, d->keycode_maplen, keycode);
+    /* Fallback: look up the keyval directly in the X11 keysym-to-XT
+     * scancode table.  This handles cases where gdk_display_map_keyval()
+     * fails (e.g. Alt_L over XQuartz X11 forwarding) or where the
+     * platform keycode map has no entry for this key. */
+    scancode = vnc_display_keymap_keyval2xtkbd(keyval);
+    if (scancode == 0)
+        g_warning("could not lookup keyval %u, please report a bug", keyval);
+    return scancode;
 }
 
 
@@ -1984,9 +2350,11 @@ void spice_display_send_keys(SpiceDisplay *display, const guint *keyvals,
     }
 }
 
-static gboolean enter_event(GtkWidget *widget, GdkEventCrossing *crossing G_GNUC_UNUSED)
+static void enter_cb(GtkEventControllerMotion *controller G_GNUC_UNUSED,
+                     gdouble x G_GNUC_UNUSED, gdouble y G_GNUC_UNUSED,
+                     gpointer user_data)
 {
-    SpiceDisplay *display = SPICE_DISPLAY(widget);
+    SpiceDisplay *display = SPICE_DISPLAY(user_data);
     SpiceDisplayPrivate *d = display->priv;
 
     DISPLAY_DEBUG(display, "%s", __FUNCTION__);
@@ -1995,30 +2363,29 @@ static gboolean enter_event(GtkWidget *widget, GdkEventCrossing *crossing G_GNUC
     spice_gtk_session_set_mouse_has_pointer(d->gtk_session, true);
     try_keyboard_grab(display);
     update_display(display);
-
-    return true;
 }
 
-static gboolean leave_event(GtkWidget *widget, GdkEventCrossing *crossing G_GNUC_UNUSED)
+static void leave_cb(GtkEventControllerMotion *controller G_GNUC_UNUSED,
+                     gpointer user_data)
 {
-    SpiceDisplay *display = SPICE_DISPLAY(widget);
+    SpiceDisplay *display = SPICE_DISPLAY(user_data);
     SpiceDisplayPrivate *d = display->priv;
 
     DISPLAY_DEBUG(display, "%s", __FUNCTION__);
 
     if (d->mouse_grab_active)
-        return true;
+        return;
 
     d->mouse_have_pointer = false;
     spice_gtk_session_set_mouse_has_pointer(d->gtk_session, false);
     try_keyboard_ungrab(display);
-
-    return true;
 }
 
-static gboolean focus_in_event(GtkWidget *widget, GdkEventFocus *focus G_GNUC_UNUSED)
+static void focus_in_cb(GtkEventController *controller G_GNUC_UNUSED,
+                        gpointer user_data)
 {
-    SpiceDisplay *display = SPICE_DISPLAY(widget);
+    SpiceDisplay *display = SPICE_DISPLAY(user_data);
+    GtkWidget *widget = GTK_WIDGET(display);
     SpiceDisplayPrivate *d = display->priv;
 
     DISPLAY_DEBUG(display, "%s", __FUNCTION__);
@@ -2028,7 +2395,7 @@ static gboolean focus_in_event(GtkWidget *widget, GdkEventFocus *focus G_GNUC_UN
      * (this happens when doing an ungrab from the leave_event callback).
      */
     if (d->keyboard_have_focus)
-        return true;
+        return;
 
     release_keys(display);
 #ifdef G_OS_WIN32
@@ -2049,13 +2416,12 @@ static gboolean focus_in_event(GtkWidget *widget, GdkEventFocus *focus G_GNUC_UN
 
     if (gtk_widget_get_realized(widget))
         update_display(display);
-
-    return true;
 }
 
-static gboolean focus_out_event(GtkWidget *widget, GdkEventFocus *focus G_GNUC_UNUSED)
+static void focus_out_cb(GtkEventController *controller G_GNUC_UNUSED,
+                         gpointer user_data)
 {
-    SpiceDisplay *display = SPICE_DISPLAY(widget);
+    SpiceDisplay *display = SPICE_DISPLAY(user_data);
 
     DISPLAY_DEBUG(display, "%s", __FUNCTION__);
     update_display(NULL);
@@ -2066,14 +2432,14 @@ static gboolean focus_out_event(GtkWidget *widget, GdkEventFocus *focus G_GNUC_U
      */
 #ifndef G_OS_WIN32
     SpiceDisplayPrivate *d = display->priv;
+    if (d->shortcut_toplevel != NULL)
+        try_keyboard_ungrab(display);
     if (d->keyboard_grab_active)
-        return true;
+        return;
 #endif
 
-    release_keys(display);
+    release_input_state(display);
     update_keyboard_focus(display, false);
-
-    return true;
 }
 
 static int button_gdk_to_spice(guint gdk)
@@ -2131,19 +2497,58 @@ static int button_mask_gdk_to_spice(int gdk)
     return spice;
 }
 
+/* A delayed press has never reached the guest; do not emit it on teardown. */
+static void release_input_state(SpiceDisplay *display)
+{
+    SpiceDisplayPrivate *d = display->priv;
+    static const struct { int mask, button; } buttons[] = {
+        { SPICE_MOUSE_BUTTON_MASK_LEFT, SPICE_MOUSE_BUTTON_LEFT },
+        { SPICE_MOUSE_BUTTON_MASK_MIDDLE, SPICE_MOUSE_BUTTON_MIDDLE },
+        { SPICE_MOUSE_BUTTON_MASK_RIGHT, SPICE_MOUSE_BUTTON_RIGHT },
+        { SPICE_MOUSE_BUTTON_MASK_SIDE, SPICE_MOUSE_BUTTON_SIDE },
+        { SPICE_MOUSE_BUTTON_MASK_EXTRA, SPICE_MOUSE_BUTTON_EXTRA },
+    };
+
+    if (d->key_delayed_id) {
+        g_source_remove(d->key_delayed_id);
+        d->key_delayed_id = 0;
+    }
+    if (d->key_delayed_scancode) {
+        guint scancode = d->key_delayed_scancode;
+        d->key_state[scancode / 32] &= ~(1u << (scancode % 32));
+        d->key_delayed_scancode = 0;
+    }
+    if (d->inputs != NULL && !d->disable_inputs)
+        release_keys(display);
+    memset(d->key_state, 0, sizeof(d->key_state));
+
+    for (guint i = 0; i < G_N_ELEMENTS(buttons); i++) {
+        if (d->mouse_button_mask & buttons[i].mask) {
+            d->mouse_button_mask &= ~buttons[i].mask;
+            if (d->inputs != NULL)
+                spice_inputs_channel_button_release(d->inputs, buttons[i].button,
+                                                    d->mouse_button_mask);
+        }
+    }
+    d->scroll_delta_y = 0;
+    d->seq_pressed = FALSE;
+    if (d->activeseq)
+        memset(d->activeseq, 0, sizeof(gboolean) * d->grabseq->nkeysyms);
+}
+
 static void transform_input(SpiceDisplay *display,
                             double window_x, double window_y,
                             int *input_x, int *input_y)
 {
     SpiceDisplayPrivate *d = display->priv;
     int display_x, display_y, display_w, display_h;
-    double is;
-    gint scale_factor;
+    double is_x, is_y;
+    double surface_scale;
 
     spice_display_get_scaling(display, NULL,
                               &display_x, &display_y,
                               &display_w, &display_h);
-    scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(display));
+    surface_scale = spice_display_get_surface_scale(display);
     /* For input we need a different scaling factor in order to
        be able to reach the full width of a display. For instance, consider
        a display of 100 pixels showing in a window 10 pixels wide. The normal
@@ -2155,29 +2560,32 @@ static void transform_input(SpiceDisplay *display,
        max_window_x * input_scale == max_display_x, which is
        (window_width - 1) * input_scale == (display_width - 1)
 
-       Note, this is the inverse of s (i.e. s ~= 1/is) as we're converting the
-       coordinates in the inverse direction (window -> display) as the fb size
-       (display -> window).
+       Note, these are the inverses of the framebuffer scaling factors,
+       calculated independently for each rounded physical dimension.
     */
-    is = ((double)(d->area.width-1) / (double)(display_w-1)) * scale_factor;
+    is_x = display_w > 1 ? (double)(d->area.width - 1) / (display_w - 1) * surface_scale : 0;
+    is_y = display_h > 1 ? (double)(d->area.height - 1) / (display_h - 1) * surface_scale : 0;
 
-    window_x -= display_x / scale_factor;
-    window_y -= display_y / scale_factor;
+    window_x -= display_x / surface_scale;
+    window_y -= display_y / surface_scale;
 
-    *input_x = floor (window_x * is);
-    *input_y = floor (window_y * is);
+    *input_x = floor(window_x * is_x);
+    *input_y = floor(window_y * is_y);
 }
 
-static gboolean motion_event(GtkWidget *widget, GdkEventMotion *motion)
+static void motion_cb(GtkEventControllerMotion *controller,
+                      gdouble x, gdouble y, gpointer user_data)
 {
-    SpiceDisplay *display = SPICE_DISPLAY(widget);
+    SpiceDisplay *display = SPICE_DISPLAY(user_data);
     SpiceDisplayPrivate *d = display->priv;
-    int x, y;
+    int ix, iy;
+    GdkModifierType state = 0;
+    gdouble x_root = 0, y_root = 0;
 
     if (!d->inputs)
-        return true;
+        return;
     if (d->disable_inputs)
-        return true;
+        return;
 
     d->seq_pressed = FALSE;
 
@@ -2187,35 +2595,45 @@ static gboolean motion_event(GtkWidget *widget, GdkEventMotion *motion)
         try_keyboard_grab(display);
     }
 
-    transform_input(display, motion->x, motion->y, &x, &y);
+    /* Get modifier state and root coordinates from the underlying event */
+    {
+        GdkEvent *event = (GdkEvent *)gtk_event_controller_get_current_event(GTK_EVENT_CONTROLLER(controller));
+        if (event) {
+            state = gdk_event_get_modifier_state(event);
+            /* GTK4/Wayland has no root coords */
+            x_root = 0;
+            y_root = 0;
+        }
+    }
+
+    transform_input(display, x, y, &ix, &iy);
 
     switch (d->mouse_mode) {
     case SPICE_MOUSE_MODE_CLIENT:
-        if (x >= 0 && x < d->area.width &&
-            y >= 0 && y < d->area.height) {
-            spice_inputs_channel_position(d->inputs, x, y, get_display_id(display),
-                                          button_mask_gdk_to_spice(motion->state));
+        if (ix >= 0 && ix < d->area.width &&
+            iy >= 0 && iy < d->area.height) {
+            spice_inputs_channel_position(d->inputs, ix, iy, get_display_id(display),
+                                          button_mask_gdk_to_spice(state));
         }
         break;
     case SPICE_MOUSE_MODE_SERVER:
         if (d->mouse_grab_active) {
-            gint dx = d->mouse_last_x != -1 ? x - d->mouse_last_x : 0;
-            gint dy = d->mouse_last_y != -1 ? y - d->mouse_last_y : 0;
+            gint dx = d->mouse_last_x != -1 ? ix - d->mouse_last_x : 0;
+            gint dy = d->mouse_last_y != -1 ? iy - d->mouse_last_y : 0;
 
             spice_inputs_channel_motion(d->inputs, dx, dy,
-                                        button_mask_gdk_to_spice(motion->state));
+                                        button_mask_gdk_to_spice(state));
 
-            d->mouse_last_x = x;
-            d->mouse_last_y = y;
+            d->mouse_last_x = ix;
+            d->mouse_last_y = iy;
             if (dx != 0 || dy != 0)
-                mouse_warp(display, motion);
+                mouse_warp(display, x_root, y_root);
         }
         break;
     default:
         g_warn_if_reached();
         break;
     }
-    return true;
 }
 
 static void press_and_release(SpiceDisplay *display,
@@ -2227,71 +2645,84 @@ static void press_and_release(SpiceDisplay *display,
     spice_inputs_channel_button_release(d->inputs, button, button_state);
 }
 
-static gboolean scroll_event(GtkWidget *widget, GdkEventScroll *scroll)
+static gboolean scroll_cb(GtkEventControllerScroll *controller,
+                      gdouble dx G_GNUC_UNUSED, gdouble dy, gpointer user_data)
 {
-    SpiceDisplay *display = SPICE_DISPLAY(widget);
+    SpiceDisplay *display = SPICE_DISPLAY(user_data);
     SpiceDisplayPrivate *d = display->priv;
-    gint button_state = button_mask_gdk_to_spice(scroll->state);
+    GdkModifierType state = 0;
+    gint button_state;
 
     DISPLAY_DEBUG(display, "%s", __FUNCTION__);
 
     if (!d->inputs)
-        return true;
+        return FALSE;
     if (d->disable_inputs)
-        return true;
+        return FALSE;
 
-    switch (scroll->direction) {
-    case GDK_SCROLL_UP:
-        press_and_release(display, SPICE_MOUSE_BUTTON_UP, button_state);
-        break;
-    case GDK_SCROLL_DOWN:
-        press_and_release(display, SPICE_MOUSE_BUTTON_DOWN, button_state);
-        break;
-    case GDK_SCROLL_SMOOTH:
-        d->scroll_delta_y += scroll->delta_y;
-        while (ABS(d->scroll_delta_y) >= 1) {
-            if (d->scroll_delta_y < 0) {
-                press_and_release(display, SPICE_MOUSE_BUTTON_UP, button_state);
-                d->scroll_delta_y += 1;
-            } else {
-                press_and_release(display, SPICE_MOUSE_BUTTON_DOWN, button_state);
-                d->scroll_delta_y -= 1;
-            }
-        }
-        break;
-    default:
-        DISPLAY_DEBUG(display, "unsupported scroll direction");
+    /* Get modifier state from the underlying event */
+    {
+        GdkEvent *event = (GdkEvent *)gtk_event_controller_get_current_event(GTK_EVENT_CONTROLLER(controller));
+        if (event)
+            state = gdk_event_get_modifier_state(event);
     }
+    button_state = button_mask_gdk_to_spice(state);
 
-    return true;
+    d->scroll_delta_y += dy;
+    while (ABS(d->scroll_delta_y) >= 1) {
+        if (d->scroll_delta_y < 0) {
+            press_and_release(display, SPICE_MOUSE_BUTTON_UP, button_state);
+            d->scroll_delta_y += 1;
+        } else {
+            press_and_release(display, SPICE_MOUSE_BUTTON_DOWN, button_state);
+            d->scroll_delta_y -= 1;
+        }
+    }
+    return TRUE;
 }
 
-static gboolean button_event(GtkWidget *widget, GdkEventButton *button)
+static void button_event_cb(SpiceDisplay *display, GdkEventType type,
+                            guint button_num, gdouble x, gdouble y,
+                            GtkEventController *controller)
 {
-    SpiceDisplay *display = SPICE_DISPLAY(widget);
     SpiceDisplayPrivate *d = display->priv;
-    int x, y;
+    GtkWidget *widget = GTK_WIDGET(display);
+    int ix, iy;
+    GdkModifierType state = 0;
 
-    DISPLAY_DEBUG(display, "%s %s: button %u, state 0x%x", __FUNCTION__,
-                  button->type == GDK_BUTTON_PRESS ? "press" : "release",
-                  button->button, button->state);
-
-    if (d->disable_inputs)
-        return true;
-
-    transform_input(display, button->x, button->y, &x, &y);
-    if ((x < 0 || x >= d->area.width ||
-         y < 0 || y >= d->area.height) &&
-        d->mouse_mode == SPICE_MOUSE_MODE_CLIENT) {
-        /* rule out clicks in outside region */
-        return true;
+    {
+        GdkEvent *event = (GdkEvent *)gtk_event_controller_get_current_event(controller);
+        if (event)
+            state = gdk_event_get_modifier_state(event);
     }
 
-    gtk_widget_grab_focus(widget);
+    DISPLAY_DEBUG(display, "%s %s: button %u, state 0x%x", __FUNCTION__,
+                  type == GDK_BUTTON_PRESS ? "press" : "release",
+                  button_num, state);
+
+    if (d->disable_inputs || !d->inputs)
+        return;
+
+    int button = button_gdk_to_spice(button_num);
+    int mask = button_gdk_to_spice_mask(button_num);
+    if (!button)
+        return;
+    if (type == GDK_BUTTON_RELEASE && mask && !(d->mouse_button_mask & mask))
+        return; /* no matching press was forwarded to the guest */
+
+    if (type == GDK_BUTTON_PRESS && d->mouse_mode == SPICE_MOUSE_MODE_CLIENT) {
+        transform_input(display, x, y, &ix, &iy);
+        if (ix < 0 || ix >= d->area.width || iy < 0 || iy >= d->area.height)
+            return; /* ignore new presses outside the image, not their releases */
+    }
+
+    if (type == GDK_BUTTON_PRESS)
+        gtk_widget_grab_focus(widget);
     if (d->mouse_mode == SPICE_MOUSE_MODE_SERVER) {
         if (!d->mouse_grab_active) {
-            try_mouse_grab(display);
-            return true;
+            if (type == GDK_BUTTON_PRESS)
+                try_mouse_grab(display);
+            return;
         }
     } else {
         /* allow to drag and drop between windows/displays:
@@ -2306,59 +2737,71 @@ static gboolean button_event(GtkWidget *widget, GdkEventButton *button)
            FIXME: should be multiple widget grab, but how?
            or should know the position of the other widgets?
         */
-        ungrab_pointer(display);
+        if (type == GDK_BUTTON_PRESS)
+            ungrab_pointer(display);
     }
 
-    if (!d->inputs)
-        return true;
-
-    switch (button->type) {
+    switch (type) {
     case GDK_BUTTON_PRESS:
-        spice_inputs_channel_button_press(d->inputs,
-                                          button_gdk_to_spice(button->button),
-                                          button_mask_gdk_to_spice(button->state));
-        /* Save the mouse button mask to couple it with Wayland movement */
-        d->mouse_button_mask = button_mask_gdk_to_spice(button->state);
-        d->mouse_button_mask |= button_gdk_to_spice_mask(button->button);
+        d->mouse_button_mask |= mask;
+        spice_inputs_channel_button_press(d->inputs, button, d->mouse_button_mask);
         break;
     case GDK_BUTTON_RELEASE:
-        spice_inputs_channel_button_release(d->inputs,
-                                            button_gdk_to_spice(button->button),
-                                            button_mask_gdk_to_spice(button->state));
-        /* Save the mouse button mask to couple it with Wayland movement */
-        d->mouse_button_mask = button_mask_gdk_to_spice(button->state);
-        d->mouse_button_mask ^= button_gdk_to_spice_mask(button->button);
+        d->mouse_button_mask &= ~mask;
+        spice_inputs_channel_button_release(d->inputs, button, d->mouse_button_mask);
         break;
     default:
         break;
     }
-    return true;
 }
 
-static void size_allocate(GtkWidget *widget, GtkAllocation *conf, gpointer data)
+static gboolean button_controller_event_cb(GtkEventControllerLegacy *controller,
+                                            GdkEvent *event, gpointer user_data)
 {
-    SpiceDisplay *display = SPICE_DISPLAY(widget);
+    SpiceDisplay *display = SPICE_DISPLAY(user_data);
+    GdkEventType type = gdk_event_get_event_type(event);
+    GtkNative *native;
+    graphene_point_t surface_point, widget_point;
+    double x, y, tx, ty;
+
+    if (type != GDK_BUTTON_PRESS && type != GDK_BUTTON_RELEASE)
+        return GDK_EVENT_PROPAGATE;
+
+    native = gtk_native_get_for_surface(gdk_event_get_surface(event));
+    if (native == NULL || !gdk_event_get_position(event, &x, &y))
+        return GDK_EVENT_PROPAGATE;
+
+    /* GDK positions are surface-local logical coordinates. Apply the native
+     * offset before translating through the widget hierarchy; no device-scale
+     * conversion is needed, even when the display is nested or on HiDPI. */
+    gtk_native_get_surface_transform(native, &tx, &ty);
+    graphene_point_init(&surface_point, x + tx, y + ty);
+    if (!gtk_widget_compute_point(GTK_WIDGET(native), GTK_WIDGET(display),
+                                  &surface_point, &widget_point))
+        return GDK_EVENT_PROPAGATE;
+
+    button_event_cb(display, type, gdk_button_event_get_button(event),
+                    widget_point.x, widget_point.y, GTK_EVENT_CONTROLLER(controller));
+    return GDK_EVENT_PROPAGATE;
+}
+
+static void size_allocate_impl(SpiceDisplay *display, gint x, gint y, gint width, gint height)
+{
     SpiceDisplayPrivate *d = display->priv;
 
-    if (conf->width == d->ww && conf->height == d->wh &&
-            conf->x == d->mx && conf->y == d->my) {
+    if (width == d->ww && height == d->wh &&
+            x == d->mx && y == d->my) {
         return;
     }
 
-    if (conf->width != d->ww  || conf->height != d->wh) {
-        d->ww = conf->width;
-        d->wh = conf->height;
-        recalc_geometry(widget);
-#ifdef HAVE_EGL
-        if (egl_enabled(d)) {
-            gint scale_factor = gtk_widget_get_scale_factor(widget);
-            spice_egl_resize_display(display, conf->width * scale_factor, conf->height * scale_factor);
-        }
-#endif
+    if (width != d->ww  || height != d->wh) {
+        d->ww = width;
+        d->wh = height;
+        recalc_geometry(GTK_WIDGET(display));
     }
 
-    d->mx = conf->x;
-    d->my = conf->y;
+    d->mx = x;
+    d->my = y;
 
     update_mouse_cursor(display);
 
@@ -2369,6 +2812,7 @@ static void size_allocate(GtkWidget *widget, GtkAllocation *conf, gpointer data)
     }
 #endif
 }
+
 
 static void update_image(SpiceDisplay *display)
 {
@@ -2383,12 +2827,18 @@ static void realize(GtkWidget *widget)
 {
     SpiceDisplay *display = SPICE_DISPLAY(widget);
     SpiceDisplayPrivate *d = display->priv;
+    GdkSurface *surface;
 
     GTK_WIDGET_CLASS(spice_display_parent_class)->realize(widget);
 
+    surface = get_widget_surface(widget);
+    if (surface != NULL) {
+        g_signal_connect_object(surface, "notify::scale",
+                                G_CALLBACK(surface_scale_changed), display, 0);
+    }
+
     d->keycode_map =
-        vnc_display_keymap_gdk2xtkbd_table(gtk_widget_get_window(widget),
-                                           &d->keycode_maplen);
+        vnc_display_keymap_gdk2xtkbd_table(surface, &d->keycode_maplen);
 
     update_image(display);
 }
@@ -2396,18 +2846,64 @@ static void realize(GtkWidget *widget)
 static void unrealize(GtkWidget *widget)
 {
     SpiceDisplay *display = SPICE_DISPLAY(widget);
+    SpiceDisplayPrivate *d = display->priv;
+    GdkSurface *surface = get_widget_surface(widget);
+
+    release_input_state(display);
+    try_mouse_ungrab(display);
+    try_keyboard_ungrab(display);
+    if (d->gtk_session != NULL) {
+        if (d->keyboard_have_focus)
+            update_keyboard_focus(display, FALSE);
+        if (d->mouse_have_pointer) {
+            d->mouse_have_pointer = FALSE;
+            spice_gtk_session_set_mouse_has_pointer(d->gtk_session, FALSE);
+        }
+    }
+    if (surface != NULL)
+        g_signal_handlers_disconnect_by_func(surface, surface_scale_changed, display);
 
     spice_cairo_image_destroy(display);
 #ifdef HAVE_EGL
-    if (display->priv->egl.context_ready) {
-        spice_egl_unrealize_display(display);
-    }
+    complete_pending_draws(display);
+    spice_dmabuf_clear_scanout(display);
 #endif
-    g_weak_ref_set(&display->priv->overlay_weak_ref, NULL);
 
     GTK_WIDGET_CLASS(spice_display_parent_class)->unrealize(widget);
 }
 
+
+static void map(GtkWidget *widget)
+{
+    SpiceDisplay *display = SPICE_DISPLAY(widget);
+
+    GTK_WIDGET_CLASS(spice_display_parent_class)->map(widget);
+    /* GTK can retain logical focus while unmapped, without another enter. */
+    if (display->priv->gtk_session != NULL && gtk_widget_is_focus(widget)) {
+        update_keyboard_focus(display, TRUE);
+        try_keyboard_grab(display);
+    }
+}
+
+static void unmap(GtkWidget *widget)
+{
+    SpiceDisplay *display = SPICE_DISPLAY(widget);
+
+#ifdef HAVE_EGL
+    complete_pending_draws(display);
+#endif
+    release_input_state(display);
+    try_mouse_ungrab(display);
+    try_keyboard_ungrab(display);
+    if (display->priv->gtk_session != NULL) {
+        update_keyboard_focus(display, FALSE);
+        if (display->priv->mouse_have_pointer) {
+            display->priv->mouse_have_pointer = FALSE;
+            spice_gtk_session_set_mouse_has_pointer(display->priv->gtk_session, FALSE);
+        }
+    }
+    GTK_WIDGET_CLASS(spice_display_parent_class)->unmap(widget);
+}
 
 /* ---------------------------------------------------------------- */
 
@@ -2416,18 +2912,11 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
     GObjectClass *gobject_class = G_OBJECT_CLASS(klass);
     GtkWidgetClass *gtkwidget_class = GTK_WIDGET_CLASS(klass);
 
-    gtkwidget_class->key_press_event = key_event;
-    gtkwidget_class->key_release_event = key_event;
-    gtkwidget_class->enter_notify_event = enter_event;
-    gtkwidget_class->leave_notify_event = leave_event;
-    gtkwidget_class->focus_in_event = focus_in_event;
-    gtkwidget_class->focus_out_event = focus_out_event;
-    gtkwidget_class->motion_notify_event = motion_event;
-    gtkwidget_class->button_press_event = button_event;
-    gtkwidget_class->button_release_event = button_event;
-    gtkwidget_class->scroll_event = scroll_event;
+    /* Event controllers handle input; lifecycle hooks release native grabs. */
     gtkwidget_class->realize = realize;
     gtkwidget_class->unrealize = unrealize;
+    gtkwidget_class->map = map;
+    gtkwidget_class->unmap = unmap;
 
     gobject_class->constructed = spice_display_constructed;
     gobject_class->dispose = spice_display_dispose;
@@ -2671,26 +3160,24 @@ static void spice_display_class_init(SpiceDisplayClass *klass)
 #define SPICE_GDK_BUTTONS_MASK \
     (GDK_BUTTON1_MASK|GDK_BUTTON2_MASK|GDK_BUTTON3_MASK|GDK_BUTTON4_MASK|GDK_BUTTON5_MASK)
 
-static GdkDevice *spice_gdk_window_get_pointing_device(GdkWindow *window)
+static GdkDevice *spice_gdk_window_get_pointing_device(GdkSurface *surface)
 {
-    GdkDisplay *gdk_display = gdk_window_get_display(window);
+    GdkDisplay *gdk_display = gdk_surface_get_display(surface);
     return gdk_seat_get_pointer(gdk_display_get_default_seat(gdk_display));
 }
 
 static GdkModifierType spice_display_get_modifiers_state(SpiceDisplay *display)
 {
     GdkModifierType modifiers;
-    GdkWindow *window = gtk_widget_get_window(GTK_WIDGET(display));
+    GdkSurface *surface = get_widget_surface(GTK_WIDGET(display));
 
-    if (window == NULL) {
+    if (surface == NULL) {
         return 0;
     }
 
-    gdk_window_get_device_position(window,
-                                   spice_gdk_window_get_pointing_device(window),
-                                   NULL,
-                                   NULL,
-                                   &modifiers);
+    gdk_surface_get_device_position(surface,
+                                    spice_gdk_window_get_pointing_device(surface),
+                                    NULL, NULL, &modifiers);
 
     return modifiers;
 }
@@ -2713,7 +3200,13 @@ static void update_mouse_mode(SpiceChannel *channel, gpointer data)
     SpiceDisplay *display = data;
     SpiceDisplayPrivate *d = display->priv;
 
-    g_object_get(channel, "mouse-mode", &d->mouse_mode, NULL);
+    enum SpiceMouseMode mode;
+    g_object_get(channel, "mouse-mode", &mode, NULL);
+    if (d->mouse_mode != mode) {
+        release_input_state(display);
+        try_mouse_ungrab(display);
+        d->mouse_mode = mode;
+    }
     DISPLAY_DEBUG(display, "mouse mode %u (%s)", d->mouse_mode, mouse_mode_to_str(d->mouse_mode));
 
     switch (d->mouse_mode) {
@@ -2750,7 +3243,7 @@ static void update_area(SpiceDisplay *display,
     };
 
 #ifdef HAVE_EGL
-    if (egl_enabled(d)) {
+    if (dmabuf_enabled(d)) {
         const SpiceGlScanout2 *so =
             spice_display_channel_get_gl_scanout2(d->display);
         g_return_if_fail(so != NULL);
@@ -2775,7 +3268,7 @@ static void update_area(SpiceDisplay *display,
         return;
     }
 
-    if (!egl_enabled(d)) {
+    if (!dmabuf_enabled(d)) {
         spice_cairo_image_destroy(display);
         if (gtk_widget_get_realized(GTK_WIDGET(display)))
             update_image(display);
@@ -2816,139 +3309,19 @@ static void primary_destroy(SpiceDisplayChannel *channel, gpointer data)
     set_monitor_ready(display, false);
 }
 
-static void queue_draw_area(SpiceDisplay *display, gint x, gint y,
-                            gint width, gint height)
+static void spice_display_queue_draw(SpiceDisplay *display)
 {
-    if (!gtk_widget_get_has_window(GTK_WIDGET(display))) {
-        GtkAllocation allocation;
-
-        gtk_widget_get_allocation(GTK_WIDGET(display), &allocation);
-        x += allocation.x;
-        y += allocation.y;
-    }
-
-    gtk_widget_queue_draw_area(GTK_WIDGET(display),
-                               x, y, width, height);
-}
-
-#if defined(GDK_WINDOWING_X11)
-
-#if defined(HAVE_LIBVA)
-static GstContext *create_vaapi_context(void)
-{
-    static Display *x11_display = NULL;
-    static VADisplay va_display = NULL;
-
-    // note that if VAAPI do not get the context for the
-    // overlay it crashes the entire program!
-    GdkDisplay *display = gdk_display_get_default();
-    g_assert_nonnull(display);
-
-    // Compute display pointers
-    if (!x11_display && GDK_IS_X11_DISPLAY(display)) {
-        x11_display = gdk_x11_display_get_xdisplay(display);
-        // for thread problems we need a different Display,
-        // VAAPI access the Display from another thread
-        x11_display = XOpenDisplay(XDisplayString(x11_display));
-        g_assert_nonnull(x11_display);
-        va_display = vaGetDisplay(x11_display);
-        g_assert_nonnull(va_display);
-    }
-
-    GstContext *context = gst_context_new("gst.vaapi.app.Display", FALSE);
-    GstStructure *structure = gst_context_writable_structure(context);
-    if (x11_display) {
-        gst_structure_set(structure, "x11-display", G_TYPE_POINTER, x11_display, NULL);
-    }
-    gst_structure_set(structure, "va-display", G_TYPE_POINTER, va_display, NULL);
-
-    return context;
-}
-#endif
-
-static void gst_sync_bus_call(GstBus *bus, GstMessage *msg, SpiceDisplay *display)
-{
-    switch(GST_MESSAGE_TYPE(msg)) {
-    case GST_MESSAGE_ELEMENT: {
-        if (gst_is_video_overlay_prepare_window_handle_message(msg) &&
-            !g_getenv("DISABLE_GSTVIDEOOVERLAY") &&
-            GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
-            GdkWindow *window = gtk_widget_get_window(GTK_WIDGET(display));
-
-            if (window && gdk_window_ensure_native(window)) {
-                SpiceDisplayPrivate *d = display->priv;
-
-                GstVideoOverlay *overlay = GST_VIDEO_OVERLAY(GST_MESSAGE_SRC(msg));
-                g_weak_ref_set(&d->overlay_weak_ref, overlay);
-                gst_video_overlay_handle_events(overlay, false);
-                gst_video_overlay_set_window_handle(overlay, (uintptr_t)GDK_WINDOW_XID(window));
-                return;
-            }
-        }
-        break;
-    }
-    case GST_MESSAGE_NEED_CONTEXT:
-    {
-        const gchar *context_type;
-
-        gst_message_parse_context_type(msg, &context_type);
-        SPICE_DEBUG("GStreamer: got need context %s from %s", context_type,
-                    GST_MESSAGE_SRC_NAME(msg));
-
-#if defined(HAVE_LIBVA)
-        if (g_strcmp0(context_type, "gst.vaapi.app.Display") == 0) {
-            GstContext *context = create_vaapi_context();
-
-            if (context) {
-                gst_element_set_context(GST_ELEMENT(msg->src), context);
-                gst_context_unref(context);
-            }
-        }
-#endif
-        break;
-    }
-    default:
-        /* not being handled */
-        break;
-    }
-}
-#endif
-
-static gboolean gst_draw_event(GtkWidget *widget, cairo_t *cr, gpointer data)
-{
-    SpiceDisplay *display = SPICE_DISPLAY(data);
+    /* GTK4: queue_draw on the visible stack child (the GtkDrawingArea),
+       not on the SpiceDisplay GtkBox — GTK4 does not propagate
+       queue_draw from parent containers to children */
     SpiceDisplayPrivate *d = display->priv;
-    GstVideoOverlay *overlay = g_weak_ref_get(&d->overlay_weak_ref);
-
-    if (overlay) {
-        gst_video_overlay_expose(overlay);
-        gst_object_unref(overlay);
-        update_mouse_pointer(display);
-        return true;
-    }
-    return false;
+    GtkWidget *child = gtk_stack_get_visible_child(d->stack);
+    if (child)
+        gtk_widget_queue_draw(child);
+    else
+        gtk_widget_queue_draw(GTK_WIDGET(display));
 }
 
-static void gst_size_allocate(GtkWidget *widget, GdkRectangle *a, gpointer data)
-{
-    SpiceDisplay *display = SPICE_DISPLAY(data);
-    SpiceDisplayPrivate *d = display->priv;
-    GstVideoOverlay *overlay = g_weak_ref_get(&d->overlay_weak_ref);
-
-    if (overlay) {
-        gint scale = gtk_widget_get_scale_factor(widget);
-
-        gst_video_overlay_set_render_rectangle(overlay, a->x * scale, a->y * scale,
-                                               a->width * scale, a->height * scale);
-        gst_object_unref(overlay);
-    }
-}
-
-/* This callback should pass to the widget a pointer of the pipeline
- * so that we can the set GST pipeline and overlay related calls from
- * here.  If the pipeline pointer is NULL, the drawing area of the
- * native renderer is set visible.
- */
 static gboolean set_overlay(SpiceChannel *channel, void* pipeline_ptr, SpiceDisplay *display)
 {
     SpiceDisplayPrivate *d = display->priv;
@@ -2958,25 +3331,9 @@ static gboolean set_overlay(SpiceChannel *channel, void* pipeline_ptr, SpiceDisp
         return true;
     }
 
-#if defined(GDK_WINDOWING_X11)
-    /* GstVideoOverlay is currently used only under x */
-    if (!g_getenv("DISABLE_GSTVIDEOOVERLAY") &&
-        GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
-        GdkWindow *window;
-
-        window = gtk_widget_get_window(GTK_WIDGET(display));
-        if (window && gdk_window_ensure_native(window)) {
-            GstBus *bus;
-
-            gtk_stack_set_visible_child_name(d->stack, "gst-area");
-            bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline_ptr));
-            gst_bus_enable_sync_message_emission(bus);
-            g_signal_connect(bus, "sync-message", G_CALLBACK(gst_sync_bus_call), display);
-            gst_object_unref(bus);
-            return true;
-        }
-    }
-#endif
+    /* GTK4 widgets share their enclosing native surface. An external overlay
+     * cannot participate in GTK clipping, movement or retained snapshots;
+     * let the decoder use its existing appsink/framebuffer path instead. */
     return false;
 }
 
@@ -2985,10 +3342,6 @@ static void invalidate(SpiceChannel *channel,
 {
     SpiceDisplay *display = data;
     SpiceDisplayPrivate *d = display->priv;
-    int display_x, display_y;
-    int x1, y1, x2, y2;
-    double s;
-    gint scale_factor;
     GdkRectangle rect = {
         .x = x,
         .y = y,
@@ -2997,10 +3350,10 @@ static void invalidate(SpiceChannel *channel,
     };
 
 #ifdef HAVE_EGL
-    set_egl_enabled(display, false);
+    set_dmabuf_enabled(display, false);
 #endif
 
-    if (!gtk_widget_get_window(GTK_WIDGET(display)))
+    if (!get_widget_surface(GTK_WIDGET(display)))
         return;
 
     if (!gdk_rectangle_intersect(&rect, &d->area, &rect))
@@ -3009,28 +3362,7 @@ static void invalidate(SpiceChannel *channel,
     if (d->canvas.convert)
         do_color_convert(display, &rect);
 
-    scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(display));
-    spice_display_get_scaling(display, &s,
-                              &display_x, &display_y,
-                              NULL, NULL);
-    display_x /= scale_factor;
-    display_y /= scale_factor;
-
-    if (s * scale_factor > 1) {
-        rect.x -= 1;
-        rect.y -= 1;
-        rect.width += 2;
-        rect.height += 2;
-    }
-
-    x1 = floor ((rect.x - d->area.x) * s) / scale_factor;
-    y1 = floor ((rect.y - d->area.y) * s) / scale_factor;
-    x2 = ceil ((rect.x - d->area.x + rect.width) * s) / scale_factor;
-    y2 = ceil ((rect.y - d->area.y + rect.height) * s) / scale_factor;
-
-    queue_draw_area(display,
-                    display_x + x1, display_y + y1,
-                    x2 - x1, y2 - y1);
+    spice_display_queue_draw(display);
 }
 
 static void mark(SpiceDisplay *display, gint mark)
@@ -3088,7 +3420,7 @@ static void update_mouse_cursor(SpiceDisplay *display)
     cairo_t *cursor_ctx;
     cairo_surface_t *surface, *target;
     double scale;
-    gint scale_factor;
+    double surface_scale;
     gint hotspot_x, hotspot_y;
 
 #if defined(GDK_WINDOWING_X11) || defined(GDK_WINDOWING_WAYLAND)
@@ -3105,24 +3437,23 @@ static void update_mouse_cursor(SpiceDisplay *display)
     }
 
     spice_display_get_scaling(display, &scale, NULL, NULL, NULL, NULL);
-    scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(display));
+    surface_scale = spice_display_get_surface_scale(display);
 
     scale = MAX(0.5, scale);
 
     cairo_surface_destroy(d->cursor_surface);
 
-    /* scale mouse cursor surface */
-    surface = gdk_cairo_surface_create_from_pixbuf(d->mouse_pixbuf, 0, gtk_widget_get_window(GTK_WIDGET(display)));
+    /* Scale the mouse cursor surface in physical pixels. */
+    surface = cairo_surface_from_pixbuf(d->mouse_pixbuf, 0,
+                                        get_widget_surface(GTK_WIDGET(display)));
     target = cairo_image_surface_create(cairo_image_surface_get_format(surface),
-                                        scale * gdk_pixbuf_get_width(d->mouse_pixbuf),
-                                        scale * gdk_pixbuf_get_height(d->mouse_pixbuf));
+                                        ceil(scale * gdk_pixbuf_get_width(d->mouse_pixbuf)),
+                                        ceil(scale * gdk_pixbuf_get_height(d->mouse_pixbuf)));
 
-    cairo_surface_set_device_scale(target, scale_factor, scale_factor);
+    cairo_surface_set_device_scale(target, surface_scale, surface_scale);
     cursor_ctx = cairo_create(target);
     cairo_scale(cursor_ctx, scale, scale);
     cairo_set_source_surface(cursor_ctx, surface, 0, 0);
-    cairo_pattern_set_filter(cairo_get_source(cursor_ctx),
-                             spice_cairo_get_filter_for_scale(scale));
     cairo_paint(cursor_ctx);
 
     d->cursor_surface = cairo_surface_reference(cairo_get_target(cursor_ctx));
@@ -3145,20 +3476,16 @@ static void update_mouse_cursor(SpiceDisplay *display)
 #if defined(GDK_WINDOWING_X11) || defined(GDK_WINDOWING_WAYLAND)
     /* undo hotspot scaling in gdkcursor */
     if (should_unscale_hotspot) {
-        hotspot_x /= scale_factor;
-        hotspot_y /= scale_factor;
+        hotspot_x /= surface_scale;
+        hotspot_y /= surface_scale;
     }
 #endif
 
-    cursor = gdk_cursor_new_from_surface(gtk_widget_get_display(GTK_WIDGET(display)),
-                                         d->cursor_surface,
-                                         hotspot_x,
-                                         hotspot_y);
+    cursor = cursor_new_from_surface(gtk_widget_get_display(GTK_WIDGET(display)),
+                                                  d->cursor_surface,
+                                                  hotspot_x,
+                                                  hotspot_y);
 
-#ifdef HAVE_EGL
-    if (egl_enabled(d))
-        spice_egl_cursor_set(display);
-#endif
     if (d->show_cursor) {
         /* unhide */
         g_clear_object(&d->show_cursor);
@@ -3205,10 +3532,10 @@ void spice_display_get_scaling(SpiceDisplay *display,
     int x, y, w, h;
     double s;
 
-    if (gtk_widget_get_realized (GTK_WIDGET(display))) {
-        gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(display));
-        ww = gtk_widget_get_allocated_width(GTK_WIDGET(display)) * scale_factor;
-        wh = gtk_widget_get_allocated_height(GTK_WIDGET(display)) * scale_factor;
+    if (gtk_widget_get_realized(GTK_WIDGET(display))) {
+        double surface_scale = spice_display_get_surface_scale(display);
+        ww = spice_display_physical_size(gtk_widget_get_width(GTK_WIDGET(display)), surface_scale);
+        wh = spice_display_physical_size(gtk_widget_get_height(GTK_WIDGET(display)), surface_scale);
     } else {
         ww = fbw;
         wh = fbh;
@@ -3254,10 +3581,6 @@ void spice_display_get_scaling(SpiceDisplay *display,
 static void cursor_invalidate(SpiceDisplay *display)
 {
     SpiceDisplayPrivate *d = display->priv;
-    double s;
-    int x, y;
-    gint redraw_x, redraw_y;
-    gint scale_factor;
 
     if (!gtk_widget_get_realized (GTK_WIDGET(display)))
         return;
@@ -3268,18 +3591,7 @@ static void cursor_invalidate(SpiceDisplay *display)
     if (!d->ready || !d->monitor_ready)
         return;
 
-    spice_display_get_scaling(display, &s, &x, &y, NULL, NULL);
-    scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(display));
-
-    redraw_x = floor((d->mouse_guest_x - d->mouse_hotspot.x - d->area.x) * s) + x;
-    redraw_y = floor((d->mouse_guest_y - d->mouse_hotspot.y - d->area.y) * s) + y;
-    redraw_x /= scale_factor;
-    redraw_y /= scale_factor;
-
-    queue_draw_area(display,
-                    redraw_x, redraw_y,
-                    ceil (gdk_pixbuf_get_width(d->mouse_pixbuf) * s),
-                    ceil (gdk_pixbuf_get_height(d->mouse_pixbuf) * s));
+    spice_display_queue_draw(display);
 }
 
 static void cursor_move(SpiceCursorChannel *channel, gint x, gint y, gpointer data)
@@ -3297,7 +3609,8 @@ static void cursor_move(SpiceCursorChannel *channel, gint x, gint y, gpointer da
     /* apparently we have to restore cursor when "cursor_move" */
     if (d->show_cursor != NULL) {
         g_clear_object(&d->mouse_cursor);
-        d->mouse_cursor = g_steal_pointer(&d->show_cursor);
+        d->mouse_cursor = d->show_cursor;
+        d->show_cursor = NULL;
         update_mouse_pointer(display);
     }
 }
@@ -3305,15 +3618,15 @@ static void cursor_move(SpiceCursorChannel *channel, gint x, gint y, gpointer da
 static void cursor_reset(SpiceCursorChannel *channel, gpointer data)
 {
     SpiceDisplay *display = data;
-    GdkWindow *window = gtk_widget_get_window(GTK_WIDGET(display));
+    GdkSurface *surface = get_widget_surface(GTK_WIDGET(display));
 
-    if (!window) {
+    if (!surface) {
         DISPLAY_DEBUG(display, "%s: no window, returning",  __FUNCTION__);
         return;
     }
 
     DISPLAY_DEBUG(display, "%s",  __FUNCTION__);
-    gdk_window_set_cursor(window, NULL);
+    gtk_widget_set_cursor(GTK_WIDGET(display), NULL);
 }
 
 static void inputs_channel_event(SpiceChannel *channel, SpiceChannelEvent event,
@@ -3340,74 +3653,61 @@ G_GNUC_INTERNAL
 void spice_display_widget_gl_scanout(SpiceDisplay *display)
 {
     SpiceDisplayPrivate *d = display->priv;
-    GError *err = NULL;
+    const SpiceGlScanout2 *scanout;
 
-    DISPLAY_DEBUG(display, "%s: got scanout",  __FUNCTION__);
+    DISPLAY_DEBUG(display, "%s: got scanout", __FUNCTION__);
 
-#ifdef GDK_WINDOWING_X11
-    GtkWidget *area = gtk_stack_get_child_by_name(d->stack, "draw-area");
-
-    if (GDK_IS_X11_DISPLAY(gdk_display_get_default()) && gtk_widget_get_realized(area)) {
-        if (!d->egl.context_ready) {
-            if (!spice_egl_init(display, &err)) {
-                g_critical("egl init failed: %s", err->message);
-                g_clear_error(&err);
-            }
-        }
-
-        if (d->egl.context_ready && d->egl.surface == EGL_NO_SURFACE) {
-            if (!spice_egl_realize_display(display, gtk_widget_get_window(area), &err)) {
-                g_critical("egl realize failed: %s", err->message);
-                g_clear_error(&err);
-            }
-
-            gint scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(display));
-            spice_egl_resize_display(display, d->ww * scale_factor, d->wh * scale_factor);
-        }
+    complete_pending_draws(display);
+    scanout = spice_display_channel_get_gl_scanout2(d->display);
+    if (scanout == NULL) {
+        spice_dmabuf_clear_scanout(display);
+        set_dmabuf_enabled(display, false);
+        spice_display_widget_update_monitor_area(display);
+        return;
     }
-#endif
 
-    set_egl_enabled(display, true);
-
-    if (d->egl.context_ready) {
-        const SpiceGlScanout2 *scanout;
-
-        scanout = spice_display_channel_get_gl_scanout2(d->display);
-        /* should only be called when the display has a scanout */
-        g_return_if_fail(scanout != NULL);
-
-        if (!spice_egl_update_scanout(display, scanout, &err)) {
-            g_critical("update scanout failed: %s", err->message);
-            g_clear_error(&err);
-        }
-    }
+    set_dmabuf_enabled(display, true);
+    /* Import only on GL_DRAW; an announcement need not contain a ready frame. */
+    spice_dmabuf_clear_scanout(display);
+    d->dmabuf.scanout = *scanout;
+    spice_display_widget_update_monitor_area(display);
 }
 
 static void gl_draw(SpiceDisplay *display,
                     guint32 x, guint32 y, guint32 w, guint32 h)
 {
     SpiceDisplayPrivate *d = display->priv;
-    GtkWidget *gl;
+    GError *err = NULL;
+    gboolean was_enabled = dmabuf_enabled(d);
 
     DISPLAY_DEBUG(display, "%s",  __FUNCTION__);
 
-    set_egl_enabled(display, true);
-
-    if (!d->egl.context_ready) {
-        DISPLAY_DEBUG(display, "Draw without GL context, skipping");
+    if (!gtk_widget_get_mapped(GTK_WIDGET(display)) || d->dmabuf.scanout.fd[0] < 0) {
         spice_display_channel_gl_draw_done(d->display);
         return;
     }
 
-    gl = gtk_stack_get_child_by_name(d->stack, "gl-area");
+    set_dmabuf_enabled(display, true);
+    if (!was_enabled)
+        spice_display_widget_update_monitor_area(display);
 
-    if (gtk_stack_get_visible_child(d->stack) == gl) {
-        gtk_gl_area_queue_render(GTK_GL_AREA(gl));
-        d->egl.call_draw_done = TRUE;
-    } else {
-        spice_egl_update_display(display);
+    if (d->area.width <= 0 || d->area.height <= 0) {
+        DISPLAY_DEBUG(display, "Draw without a visible scanout, skipping");
         spice_display_channel_gl_draw_done(d->display);
+        return;
     }
+
+    /* A DMA-BUF can be modified in place between GL draws. GdkTexture is
+     * immutable, so a new texture must represent each requested frame. */
+    if (!spice_dmabuf_update_scanout(display, &d->dmabuf.scanout, &err)) {
+        g_critical("update scanout failed: %s", err->message);
+        g_clear_error(&err);
+        spice_display_channel_gl_draw_done(d->display);
+        return;
+    }
+
+    d->dmabuf.pending_draws++;
+    spice_display_queue_draw(display);
 }
 #else
 static void spice_display_widget_gl_scanout(SpiceDisplay *display)
@@ -3430,9 +3730,17 @@ static void channel_new(SpiceSession *s, SpiceChannel *channel, SpiceDisplay *di
     g_object_get(channel, "channel-id", &id, NULL);
     if (SPICE_IS_MAIN_CHANNEL(channel)) {
         d->main = SPICE_MAIN_CHANNEL(channel);
+        update_ready(display);
+        recalc_geometry(GTK_WIDGET(display));
         spice_g_signal_connect_object(channel, "main-mouse-update",
                                       G_CALLBACK(update_mouse_mode), display, 0);
-        update_mouse_mode(channel, display);
+        /* The newly created main channel starts with mouse-mode 0; the
+         * negotiated mode arrives in main-mouse-update. An already connected
+         * channel still needs its current mode applied immediately. */
+        gint mode;
+        g_object_get(channel, "mouse-mode", &mode, NULL);
+        if (mode != 0)
+            update_mouse_mode(channel, display);
         return;
     }
 
@@ -3532,6 +3840,11 @@ static void channel_destroy(SpiceSession *s, SpiceChannel *channel, SpiceDisplay
     if (SPICE_IS_DISPLAY_CHANNEL(channel)) {
         if (id != d->channel_id)
             return;
+#ifdef HAVE_EGL
+        complete_pending_draws(display);
+        spice_dmabuf_clear_scanout(display);
+        d->dmabuf.enabled = FALSE;
+#endif
         primary_destroy(d->display, display);
         d->display = NULL;
         return;
@@ -3545,6 +3858,9 @@ static void channel_destroy(SpiceSession *s, SpiceChannel *channel, SpiceDisplay
     }
 
     if (SPICE_IS_INPUTS_CHANNEL(channel)) {
+        release_input_state(display);
+        try_mouse_ungrab(display);
+        try_keyboard_ungrab(display);
         d->inputs = NULL;
         return;
     }
@@ -3644,20 +3960,38 @@ GdkPixbuf *spice_display_get_pixbuf(SpiceDisplay *display)
     g_return_val_if_fail(d->display != NULL, NULL);
 
 #ifdef HAVE_EGL
-    if (egl_enabled(d)) {
-        GdkPixbuf *tmp;
+    if (dmabuf_enabled(d)) {
+        if (d->dmabuf.scanout_texture != NULL) {
+            int tex_w = gdk_texture_get_width(d->dmabuf.scanout_texture);
+            int tex_h = gdk_texture_get_height(d->dmabuf.scanout_texture);
+            int crop_y = d->dmabuf.scanout.y0top ? d->area.y :
+                         tex_h - d->area.y - d->area.height;
 
-        data = g_malloc0(d->area.width * d->area.height * 4);
-        glReadBuffer(GL_FRONT);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glReadPixels(0, 0, d->area.width, d->area.height,
-                     GL_RGBA, GL_UNSIGNED_BYTE, data);
-        tmp = gdk_pixbuf_new_from_data(data, GDK_COLORSPACE_RGB, true,
-                                       8, d->area.width, d->area.height,
-                                       d->area.width * 4,
-                                       (GdkPixbufDestroyNotify)g_free, NULL);
-        pixbuf = gdk_pixbuf_flip(tmp, false);
-        g_object_unref(tmp);
+            if (d->area.x < 0 || crop_y < 0 ||
+                d->area.width <= 0 || d->area.height <= 0 ||
+                d->area.width > tex_w - d->area.x ||
+                d->area.height > tex_h - crop_y) {
+                return NULL;
+            }
+            gsize stride;
+            GdkTextureDownloader *downloader = gdk_texture_downloader_new(d->dmabuf.scanout_texture);
+            gdk_texture_downloader_set_format(downloader, GDK_MEMORY_R8G8B8A8);
+            GBytes *bytes = gdk_texture_downloader_download_bytes(downloader, &stride);
+            gdk_texture_downloader_free(downloader);
+            GdkPixbuf *frame = gdk_pixbuf_new_from_bytes(bytes, GDK_COLORSPACE_RGB, TRUE,
+                                                       8, tex_w, tex_h, stride);
+            g_bytes_unref(bytes);
+            pixbuf = gdk_pixbuf_new_subpixbuf(frame, d->area.x, crop_y,
+                                             d->area.width, d->area.height);
+            g_object_unref(frame);
+            if (!d->dmabuf.scanout.y0top) {
+                frame = gdk_pixbuf_flip(pixbuf, FALSE);
+                g_object_unref(pixbuf);
+                pixbuf = frame;
+            }
+        } else {
+            g_return_val_if_reached(NULL);
+        }
     } else
 #endif
     {

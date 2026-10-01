@@ -4,6 +4,6 @@ src/desktop-integration.c
 src/spice-channel.c
 src/spice-option.c
 src/usb-device-manager.c
-src/usb-device-widget.c
+src/gtk4/usb-device-widget.c
 src/usbutil.c
 tools/spice-cmdline.c

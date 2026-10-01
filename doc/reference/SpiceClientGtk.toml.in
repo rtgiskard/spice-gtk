@@ -13,10 +13,10 @@ search_index = true
   description = "The base type system library"
   docs_url = "https://docs.gtk.org/gobject/"
 
-  [dependencies."Gtk-3.0"]
+  [dependencies."Gtk-4.0"]
   name = "Gtk"
   description = "The GTK toolkit"
-  docs_url = "https://docs.gtk.org/gtk3/"
+  docs_url = "https://docs.gtk.org/gtk4/"
 
   [dependencies."SpiceClientGLib-2.0"]
   name = "SpiceClientGLib"

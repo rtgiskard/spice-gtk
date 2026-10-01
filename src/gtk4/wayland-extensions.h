@@ -18,6 +18,11 @@
 #pragma once
 
 #include <gtk/gtk.h>
+#include <stdint.h>
+#include <wayland-client-core.h>
+
+struct zwp_relative_pointer_v1;
+struct zwp_locked_pointer_v1;
 
 void spice_wayland_extensions_init(GtkWidget *widget);
 void spice_wayland_extensions_finalize(GtkWidget *widget);

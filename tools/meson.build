@@ -14,19 +14,9 @@ foreach exe : ['spicy-stats', 'spicy-screenshot']
              dependencies : spice_client_glib_dep)
 endforeach
 
-#
-# spicy
-#
-if spice_gtk_has_gtk
-  spicy_sources = [
-    'spicy.c',
-    'spicy-connect.c',
-    'spicy-connect.h',
-  ]
-
-  executable('spicy',
-             sources : spicy_sources + spice_cmdline_sources,
-             c_args : '-Wno-deprecated-declarations',
-             install : true,
-             dependencies : spice_client_gtk_dep)
-endif
+# GTK4 smoke client, built but not installed as an end-user viewer.
+executable('spicy-test-gtk4',
+           sources : ['spicy-test-gtk4.c'] + spice_cmdline_sources,
+           c_args : spice_gtk4_cflags,
+           install : false,
+           dependencies : spice_client_gtk4_dep)

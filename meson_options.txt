@@ -1,7 +1,3 @@
-option('gtk',
-    type : 'feature',
-    description: 'Enable gtk+')
-
 option('wayland-protocols',
     type : 'feature',
     description: 'Enable wayland protocols')

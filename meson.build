@@ -32,8 +32,6 @@ compiler = meson.get_compiler('c')
 spice_gtk_config_data = configuration_data()
 spice_gtk_include = [include_directories('.')]
 spice_glib_deps = []
-spice_gtk_deps = []
-spice_wayland_deps = []
 spice_acl_deps = []
 spice_protocol_version = '0.14.5'
 
@@ -143,48 +141,48 @@ foreach dep, version : optional_deps
   endif
 endforeach
 
-# gtk
-spice_gtk_has_gtk = false
-gtk_version_required = '3.22'
-d = dependency('gtk+-3.0', version : '>= @0@'.format(gtk_version_required),
-               required: get_option('gtk'))
-summary_info += {'gtk': d.found()}
-if d.found()
-  spice_gtk_deps += d
-  spice_gtk_deps += dependency('epoxy', required: spice_gtk_has_egl)
-  if host_machine.system() != 'windows'
-    d = dependency('x11', required: false)
-    if d.found()
-      spice_gtk_deps += d
-    endif
-    d = dependency('libva-x11', required: false)
-    if d.found()
-      spice_gtk_deps += d
-      spice_gtk_config_data.set('HAVE_LIBVA', '1')
-    endif
-  endif
-  spice_gtk_has_gtk = true
+# GTK4 is the only widget backend.
+spice_gtk4_deps = [dependency('gtk4', version : '>= 4.14')]
+spice_gtk4_deps += dependency('epoxy', required: spice_gtk_has_egl)
+math_library = compiler.find_library('m', required : false)
+if math_library.found()
+  spice_gtk4_deps += math_library
 endif
+spice_gtk4_wayland_deps = []
+if host_machine.system() != 'windows'
+  foreach name : ['x11', 'xi', 'libva-x11']
+    d = dependency(name, required: false)
+    if d.found()
+      spice_gtk4_deps += d
+      if name == 'libva-x11'
+        spice_gtk_config_data.set('HAVE_LIBVA', '1')
+      endif
+    endif
+  endforeach
+endif
+if host_machine.system() == 'darwin'
+  spice_gtk4_deps += dependency('appleframeworks', modules : ['Foundation'])
+endif
+summary_info += {'gtk4': true}
 
-# wayland protocols
-spice_gtk_has_wayland_protocols = false
-# Check if gtk is enabled and supports the wayland backend
-if host_machine.system() != 'windows' and spice_gtk_has_gtk and compiler.has_header('gtk-3.0/gdk/gdkwayland.h')
+
+# wayland protocols for gtk4
+spice_gtk4_has_wayland_protocols = false
+if host_machine.system() != 'windows' and compiler.has_header('gtk-4.0/gdk/wayland/gdkwayland.h')
   d = dependency('wayland-protocols', version: '>= 1.17', required: get_option('wayland-protocols'))
-  summary_info += {'wayland-protocols': d.found()}
   if d.found()
-    spice_gtk_config_data.set('HAVE_WAYLAND_PROTOCOLS', '1')
     dir_wp_base = d.get_variable(pkgconfig: 'pkgdatadir')
     dep_scanner = dependency('wayland-scanner', native: true)
     prog_scanner = find_program(dep_scanner.get_variable(pkgconfig: 'wayland_scanner'))
-
     wayland_libs_version_required = '1.17.0'
-    spice_wayland_deps += dependency('wayland-server', version : '>= @0@'.format(wayland_libs_version_required))
-    spice_wayland_deps += dependency('wayland-cursor', version : '>= @0@'.format(wayland_libs_version_required))
-    spice_wayland_deps += dependency('wayland-client', version : '>= @0@'.format(wayland_libs_version_required))
-    spice_gtk_has_wayland_protocols = true
+    spice_gtk4_wayland_deps += dependency('wayland-server', version : '>= @0@'.format(wayland_libs_version_required))
+    spice_gtk4_wayland_deps += dependency('wayland-cursor', version : '>= @0@'.format(wayland_libs_version_required))
+    spice_gtk4_wayland_deps += dependency('wayland-client', version : '>= @0@'.format(wayland_libs_version_required))
+    spice_gtk4_has_wayland_protocols = true
   endif
 endif
+summary_info += {'wayland-protocols': spice_gtk4_has_wayland_protocols}
+
 
 # webdav
 spice_gtk_has_phodav = false
@@ -403,11 +401,6 @@ glib_encoded_version = 'GLIB_VERSION_@0@'.format(glib_version.underscorify())
 spice_gtk_global_cflags += ['-DGLIB_VERSION_MIN_REQUIRED=@0@'.format(glib_encoded_version),
                             '-DGLIB_VERSION_MAX_ALLOWED=@0@'.format(glib_encoded_version)]
 
-if spice_gtk_has_gtk
-  gtk_encoded_version='GDK_VERSION_@0@'.format(gtk_version_required.underscorify())
-  spice_gtk_global_cflags += ['-DGDK_VERSION_MIN_REQUIRED=@0@'.format(gtk_encoded_version),
-                              '-DGDK_VERSION_MAX_ALLOWED=@0@'.format(gtk_encoded_version)]
-endif
 
 # Workaround gtk+ exposing Objective C: https://gitlab.gnome.org/GNOME/gtk/issues/1737
 if host_machine.system() == 'darwin'
@@ -439,6 +432,7 @@ configure_file(output : 'config.h',
 # Subdirectories
 #
 subdir('src')
+subdir('src/gtk4')
 subdir('tools')
 subdir('tests')
 if build_machine.system() == 'windows'
@@ -467,15 +461,12 @@ pkgconfig.generate(spice_client_glib_lib,
                    requires : ['spice-protocol', 'glib-2.0', 'gobject-2.0', 'gio-2.0'],
                    variables : 'exec_prefix=${prefix}')
 
+# write spice-client-gtk-4.0.pc
 #
-# write spice-client-gtk.pc
-#
-if spice_gtk_has_gtk
-  pkgconfig.generate(spice_client_gtk_lib,
-                     description : 'SPICE Client Gtk 3.0 library',
-                     subdirs : 'spice-client-gtk-3.0',
-                     requires : ['spice-client-glib-2.0', 'gtk+-3.0', 'glib-2.0', 'gobject-2.0'],
-                     variables : 'exec_prefix=${prefix}')
-endif
+pkgconfig.generate(spice_client_gtk4_lib,
+                   description : 'SPICE Client Gtk 4.0 library',
+                   subdirs : 'spice-client-gtk-4.0',
+                   requires : ['spice-client-glib-2.0', 'gtk4', 'glib-2.0', 'gobject-2.0'],
+                   variables : 'exec_prefix=${prefix}')
 
 summary(summary_info, bool_yn: true)

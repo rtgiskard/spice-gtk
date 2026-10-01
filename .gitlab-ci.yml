@@ -5,7 +5,7 @@ variables:
                ninja-build gtk-doc glib2-devel gettext gettext-devel gcc
                gi-docgen
 
-  DEPS_FEDORA: zlib-devel openssl-devel intltool gtk3-devel
+  DEPS_FEDORA: zlib-devel openssl-devel intltool gtk4-devel
                gobject-introspection-devel cyrus-sasl-devel
                pulseaudio-libs-devel libjpeg-turbo-devel
                libacl-devel gstreamer1-devel gstreamer1-plugins-base-devel
@@ -15,7 +15,7 @@ variables:
                bzip2
 
   DEPS_MINGW: mingw64-gcc mingw64-pkg-config mingw64-pixman mingw64-openssl
-              mingw64-gtk3 mingw64-json-glib mingw64-opus
+              mingw64-gtk4 mingw64-json-glib mingw64-opus
               mingw64-gstreamer1-plugins-base mingw64-gstreamer1-plugins-good
               mingw64-usbredir mingw32-usbredir
               wine
@@ -49,6 +49,7 @@ fedora:
     - meson setup --buildtype=release build-feat-disabled -Dauto_features=disabled --werror
     - ninja -C build-feat-disabled
     - ninja -C build-feat-disabled test
+
 
 windows:
   artifacts:

@@ -17,20 +17,21 @@
 #pragma once
 
 #include "config.h"
+#include <math.h>
 
 #ifdef WIN32
 #include <windows.h>
 #endif
 
-#ifdef HAVE_EGL
-#include <epoxy/egl.h>
-#endif
 
 #include "spice-widget.h"
 #include "spice-common.h"
 #include "spice-gtk-session.h"
 
-#include <gst/video/videooverlay.h>
+/* GTK4 note: GdkPoint was removed in GTK4.  We use SpicePoint from
+ * spice-common/common/draw.h (int32_t x, y) which is already pulled
+ * in via spice-common.h above. */
+
 
 G_BEGIN_DECLS
 
@@ -43,12 +44,12 @@ G_BEGIN_DECLS
 typedef struct _SpiceDisplayPrivate SpiceDisplayPrivate;
 
 struct _SpiceDisplay {
-    GtkEventBox parent;
+    GtkBox parent;
     SpiceDisplayPrivate *priv;
 };
 
 struct _SpiceDisplayClass {
-    GtkEventBoxClass parent_class;
+    GtkBoxClass parent_class;
 
     /* signals */
     void (*mouse_grab)(SpiceChannel *channel, gint grabbed);
@@ -100,7 +101,7 @@ struct _SpiceDisplayPrivate {
     bool                    mouse_have_pointer;
     GdkCursor               *mouse_cursor;
     GdkPixbuf               *mouse_pixbuf;
-    GdkPoint                mouse_hotspot;
+    SpicePoint              mouse_hotspot;
     GdkCursor               *show_cursor;
     int                     mouse_last_x;
     int                     mouse_last_y;
@@ -109,7 +110,10 @@ struct _SpiceDisplayPrivate {
     cairo_surface_t         *cursor_surface;
 
     bool                    keyboard_grab_active;
+    GdkToplevel             *shortcut_toplevel;
+    gulong                  shortcut_notify_id;
     bool                    keyboard_have_focus;
+    bool                    auto_usbredir_requested;
 
     const guint16          *keycode_map;
     size_t                  keycode_maplen;
@@ -135,43 +139,38 @@ struct _SpiceDisplayPrivate {
 #endif
 #ifdef HAVE_EGL
     struct {
-        gboolean            context_ready;
         gboolean            enabled;
-        EGLSurface          surface;
-        EGLDisplay          display;
-        EGLConfig           conf;
-        EGLContext          ctx;
-        gint                mproj, attr_pos, attr_tex;
-        guint               vbuf_id;
-        guint               tex_id;
-        guint               tex_pointer_id;
-        guint               prog;
-        EGLImageKHR         image;
-        gboolean            call_draw_done;
+        GdkTexture          *scanout_texture;
+        guint               pending_draws;
         SpiceGlScanout2     scanout;
-    } egl;
+    } dmabuf;
 #endif // HAVE_EGL
     double scroll_delta_y;
-    GWeakRef overlay_weak_ref;
+    /* Event controllers */
+    GtkEventController      *key_controller;
+    GtkEventController      *motion_controller;
+    GtkEventController      *scroll_controller;
+    GtkEventController      *button_controller;
 };
+
+/* Round once where logical widget units become device pixels. */
+static inline gint spice_display_physical_size(gint logical, double scale)
+{
+    return lround(logical * scale);
+}
+
+double   spice_display_get_surface_scale       (SpiceDisplay *display);
 
 int      spice_cairo_image_create                 (SpiceDisplay *display);
 void     spice_cairo_image_destroy                (SpiceDisplay *display);
 void     spice_cairo_draw_event                   (SpiceDisplay *display, cairo_t *cr);
-cairo_filter_t  spice_cairo_get_filter_for_scale(double s);
+void     spice_cairo_draw_cursor                  (SpiceDisplay *display, cairo_t *cr);
 gboolean spice_allow_scaling                      (SpiceDisplay *display);
 void     spice_display_get_scaling           (SpiceDisplay *display, double *s, int *x, int *y, int *w, int *h);
-gboolean spice_egl_init                      (SpiceDisplay *display, GError **err);
-gboolean spice_egl_realize_display           (SpiceDisplay *display, GdkWindow *win,
-                                              GError **err);
-void     spice_egl_unrealize_display         (SpiceDisplay *display);
-void     spice_egl_update_display            (SpiceDisplay *display);
-void     spice_egl_resize_display            (SpiceDisplay *display, int w, int h);
-void     spice_egl_set_x11_window_visual     (SpiceDisplay *display, GtkWidget *widget);
-gboolean spice_egl_update_scanout            (SpiceDisplay *display,
-                                              const SpiceGlScanout2 *scanout,
-                                              GError **err);
-void     spice_egl_cursor_set                (SpiceDisplay *display);
+void     spice_dmabuf_clear_scanout          (SpiceDisplay *display);
+gboolean spice_dmabuf_update_scanout         (SpiceDisplay *display,
+                                             const SpiceGlScanout2 *scanout,
+                                             GError **err);
 
 #ifdef HAVE_EGL
 void     spice_display_widget_gl_scanout     (SpiceDisplay *display);

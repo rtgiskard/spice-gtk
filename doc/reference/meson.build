@@ -45,35 +45,31 @@ custom_target('spice-client-glib-doc',
   install_dir: docs_dir,
 )
 
-if spice_gtk_has_gtk
-  gtk_content_files = files(
-    'gtk-overview.md',
-  )
+gtk_content_files = files('gtk-overview.md')
 
-  gtk_toml = configure_file(
-    input: 'SpiceClientGtk.toml.in',
-    output: 'SpiceClientGtk.toml',
-    configuration: toml_conf,
-  )
+gtk_toml = configure_file(
+  input: 'SpiceClientGtk.toml.in',
+  output: 'SpiceClientGtk.toml',
+  configuration: toml_conf,
+)
 
-  custom_target('spice-client-gtk-doc',
-    input: [gtk_toml, spice_client_gtk_gir[0]],
-    output: 'SpiceClientGtk-3.0',
-    command: [
-      gidocgen,
-      'generate',
-      '--quiet',
-      '--no-namespace-dir',
-      '--add-include-path=@0@'.format(meson.project_build_root() / 'src'),
-      '--config=@INPUT0@',
-      '--output-dir=@OUTPUT@',
-      '--content-dir=@0@'.format(meson.current_source_dir()),
-      '@INPUT1@',
-    ],
-    depends: [spice_client_gtk_gir[0], spice_client_glib_gir[0]],
-    depend_files: gtk_content_files,
-    build_by_default: true,
-    install: true,
-    install_dir: docs_dir,
-  )
-endif
+custom_target('spice-client-gtk-doc',
+  input: [gtk_toml, spice_client_gtk4_gir[0]],
+  output: 'SpiceClientGtk-4.0',
+  command: [
+    gidocgen,
+    'generate',
+    '--quiet',
+    '--no-namespace-dir',
+    '--add-include-path=@0@'.format(meson.project_build_root() / 'src'),
+    '--config=@INPUT0@',
+    '--output-dir=@OUTPUT@',
+    '--content-dir=@0@'.format(meson.current_source_dir()),
+    '@INPUT1@',
+  ],
+  depends: [spice_client_gtk4_gir[0], spice_client_glib_gir[0]],
+  depend_files: gtk_content_files,
+  build_by_default: true,
+  install: true,
+  install_dir: docs_dir,
+)

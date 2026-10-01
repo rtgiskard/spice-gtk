@@ -1,3 +1,53 @@
+GTK4-only fork
+==============
+
+- Build the GTK 4 client widget, SpiceClientGtk-4.0 introspection and pkg-config
+  metadata by default; remove the GTK 3 widget, build option and spicy viewer.
+- Use fractional GDK surface scale for display sizing and input coordinates.
+- Keep visible DMA-BUF frames as GPU-native GTK textures without per-frame CPU
+  readback. Acknowledge during snapshot construction, not GPU completion: shared
+  buffer reuse can overwrite retained frames, an accepted performance tradeoff.
+- Drain pending draw acknowledgements on unmap, scanout reset and empty snapshots
+  to avoid leaving the producer waiting when no frame will be rendered.
+- Handle GTK 4 clipboard requests asynchronously with cancellation and bounded
+  guest replies; marshal Wayland input callbacks to the GTK main context.
+- Fix GTK 4 USB device widget ownership and lifecycle handling.
+- Recompute guest monitor configuration from child drawing-area allocations, including
+  guest frames that do not repaint; round fractional physical sizes to the nearest
+  device pixel and replay cached viewport geometry when the main channel arrives
+  or is replaced before updating the guest's display configuration.
+- Release held guest keys/buttons and pointer/keyboard grabs on hide and teardown;
+  balance auto-USB-redirection requests across focus changes and widget disposal.
+- Forward raw mouse-button events so simultaneous buttons and drag releases stay
+  balanced, including displays embedded at nonzero offsets and scaled surfaces.
+- Stream host clipboard contents asynchronously with bounded size and cancellation
+  so large requests do not block the GTK main loop.
+- Annotate session-owned channel constructor returns as borrowed for GIR bindings.
+- Safely destroy display canvases when the guest resets or replaces its primary
+  surface; take the canvas pointer before invoking its virtual destructor.
+- Preserve fractional framebuffer placement and nearest-neighbor sampling in
+  Cairo for 1:1 and integer guest-pixel scaling so fractional host scale does not
+  blur the guest image; retain smooth filtering for fractional image fitting.
+- Name GTK4 scanout state and helpers for their actual DMA-BUF texture ownership;
+  remove the unused EGL context initialization path and clear scanouts on unrealize.
+- Queue GTK4 redraws directly instead of computing dirty rectangles that GTK4
+  cannot consume, preserving software framebuffer and cursor rendering.
+- Fix screenshot channel order, monitor cropping and bottom-origin orientation;
+  compose the server-mode guest cursor over DMA-BUF snapshots.
+- Use GStreamer's appsink/framebuffer renderer instead of native-surface overlays
+  so embedded video respects GTK clipping and siblings, at the cost of direct-overlay
+  acceleration.
+- Use native GDK Wayland shortcut inhibition and compositor-confirmed grab state;
+  release pending requests on focus loss and teardown, share requests per native
+  surface, and restore retained widget focus after remapping without reentrant grabs.
+- Track clipboard providers by session and selection instead of process-local
+  ownership, so stale sessions cannot clear another session or local editor's content.
+- Preserve KDE cut-selection metadata with asynchronous, cancellable reads and a
+  cumulative size limit; share static MIME metadata instead of duplicating strings.
+- Return the required boolean from scroll callbacks and release monitor references
+  after X11 pointer warps.
+- Add isolated clipboard, screenshot, fractional-scroll and focus-remap regressions.
+
 v0.43
 =====
 

@@ -27,7 +27,7 @@ G_GNUC_INTERNAL
 int spice_cairo_image_create(SpiceDisplay *display)
 {
     SpiceDisplayPrivate *d = display->priv;
-    gint scale_factor;
+    double scale;
 
     if (d->canvas.surface != NULL)
         return 0;
@@ -49,8 +49,8 @@ int spice_cairo_image_create(SpiceDisplay *display)
              d->canvas.width, d->canvas.height, d->canvas.stride);
     }
 
-    scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(display));
-    cairo_surface_set_device_scale(d->canvas.surface, scale_factor, scale_factor);
+    scale = spice_display_get_surface_scale(display);
+    cairo_surface_set_device_scale(d->canvas.surface, scale, scale);
 
     return 0;
 }
@@ -70,85 +70,56 @@ G_GNUC_INTERNAL
 void spice_cairo_draw_event(SpiceDisplay *display, cairo_t *cr)
 {
     SpiceDisplayPrivate *d = display->priv;
-    cairo_rectangle_int_t rect;
-    cairo_region_t *region;
     double s;
+    double scale;
     int x, y;
     int ww, wh;
     int w, h;
-    gint scale_factor;
 
-    scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(display));
+    scale = spice_display_get_surface_scale(display);
     spice_display_get_scaling(display, &s, &x, &y, &w, &h);
 
-    /* convert physical pixel to logical */
-    x /= scale_factor;
-    y /= scale_factor;
-    w /= scale_factor;
-    h /= scale_factor;
+    ww = gtk_widget_get_width(GTK_WIDGET(display));
+    wh = gtk_widget_get_height(GTK_WIDGET(display));
 
-    ww = gtk_widget_get_allocated_width(GTK_WIDGET(display));
-    wh = gtk_widget_get_allocated_height(GTK_WIDGET(display));
-
-    /* We need to paint the bg color around the image */
-    rect.x = 0;
-    rect.y = 0;
-    rect.width = ww;
-    rect.height = wh;
-    region = cairo_region_create_rectangle(&rect);
-
-    /* Optionally cut out the inner area where the pixmap
-       will be drawn. This avoids 'flashing' since we're
-       not double-buffering. */
-    if (d->canvas.surface) {
-        rect.x = x;
-        rect.y = y;
-        rect.width = w;
-        rect.height = h;
-        cairo_region_subtract_rectangle(region, &rect);
-    }
-
-    gdk_cairo_region (cr, region);
-    cairo_region_destroy (region);
-
-    /* Need to set a real solid color, because the default is usually
-       transparent these days, and non-double buffered windows can't
-       render transparently */
+    /* GTK snapshots are buffered; paint the letterbox before the framebuffer. */
+    cairo_rectangle(cr, 0, 0, ww, wh);
     cairo_set_source_rgb (cr, 0, 0, 0);
     cairo_fill(cr);
 
     /* Draw the display */
     if (d->canvas.surface) {
-        cairo_filter_t filter = spice_cairo_get_filter_for_scale(s);
-        cairo_translate(cr, x, y);
-        cairo_rectangle(cr, 0, 0, w, h);
+        /* Keep physical pixel positions exact at fractional surface scales. */
+        cairo_translate(cr, x / scale, y / scale);
+        cairo_rectangle(cr, 0, 0, w / scale, h / scale);
         cairo_scale(cr, s, s);
         if (!d->canvas.convert)
             cairo_translate(cr, -d->area.x, -d->area.y);
         cairo_set_source_surface(cr, d->canvas.surface, 0, 0);
-        cairo_pattern_set_filter(cairo_get_source(cr), filter);
+        if (s >= 1.0 && s == floor(s))
+            cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_NEAREST);
         cairo_fill(cr);
 
-        if (d->mouse_mode == SPICE_MOUSE_MODE_SERVER &&
-            d->mouse_guest_x != -1 && d->mouse_guest_y != -1 &&
-            !d->show_cursor &&
-            spice_gtk_session_get_pointer_grabbed(d->gtk_session)) {
-            cairo_surface_t *surface = d->cursor_surface;
-            if (surface != NULL) {
-                cairo_set_source_surface(cr, surface,
-                                         (double)(d->mouse_guest_x - d->mouse_hotspot.x) / scale_factor,
-                                         (double)(d->mouse_guest_y - d->mouse_hotspot.y) / scale_factor);
-                cairo_pattern_set_filter(cairo_get_source(cr), filter);
-                cairo_paint(cr);
-            }
-        }
+        spice_cairo_draw_cursor(display, cr);
     }
 }
 
 G_GNUC_INTERNAL
-cairo_filter_t spice_cairo_get_filter_for_scale(double s)
+void spice_cairo_draw_cursor(SpiceDisplay *display, cairo_t *cr)
 {
-    return s == rint(s) ? CAIRO_FILTER_NEAREST : CAIRO_FILTER_BILINEAR;
+    SpiceDisplayPrivate *d = display->priv;
+    double scale = spice_display_get_surface_scale(display);
+
+    if (d->mouse_mode == SPICE_MOUSE_MODE_SERVER &&
+        d->mouse_guest_x != -1 && d->mouse_guest_y != -1 &&
+        !d->show_cursor &&
+        spice_gtk_session_get_pointer_grabbed(d->gtk_session) &&
+        d->cursor_surface != NULL) {
+        cairo_set_source_surface(cr, d->cursor_surface,
+                                 (double)(d->mouse_guest_x - d->mouse_hotspot.x) / scale,
+                                 (double)(d->mouse_guest_y - d->mouse_hotspot.y) / scale);
+        cairo_paint(cr);
+    }
 }
 
 G_GNUC_INTERNAL
