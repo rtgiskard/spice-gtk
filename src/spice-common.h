@@ -31,3 +31,7 @@
 
 #include "spice-version.h"
 #include "spice-util.h"
+
+/* Display-channel object data shared by the core and widget libraries.
+ * Borrowed from the decoder; cleared before the pipeline is released. */
+#define SPICE_DISPLAY_NATIVE_PIPELINE "spice-display-native-pipeline"

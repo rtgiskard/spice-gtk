@@ -34,9 +34,14 @@ GTK4-only fork
   cannot consume, preserving software framebuffer and cursor rendering.
 - Fix screenshot channel order, monitor cropping and bottom-origin orientation;
   compose the server-mode guest cursor over DMA-BUF snapshots.
-- Use GStreamer's appsink/framebuffer renderer instead of native-surface overlays
-  so embedded video respects GTK clipping and siblings, at the cost of direct-overlay
-  acceleration.
+- Present streaming video through gtk4paintablesink and the GTK canvas snapshot,
+  retaining GPU-native GL/DMA-BUF negotiation, monitor crop, scaling and cursors
+  without drawing over the enclosing native window. Keep framebuffer fallback
+  when native presentation is unavailable and read back video screenshots on demand.
+- Keep video pipeline state under decoder ownership so removing a view cannot
+  strand incoming compressed frames in a stopped pipeline. Share the native sink
+  and paintable across concurrent and later-attached views; an obsolete decoder
+  cannot clear a replacement stream.
 - Use native GDK Wayland shortcut inhibition and compositor-confirmed grab state;
   release pending requests on focus loss and teardown, share requests per native
   surface, and restore retained widget focus after remapping without reentrant grabs.

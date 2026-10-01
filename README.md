@@ -37,9 +37,13 @@ Project content
       while GTK still references it. Descriptor lifetime does not freeze contents.
       Pending draws are acknowledged on hide, scanout reset and empty snapshots;
       hidden displays acknowledge new draws without importing a texture.
-    * GStreamer video uses appsink/framebuffer composition, not native-surface
-      overlays, so embedded video respects GTK clipping and sibling widgets.
-      Direct-overlay acceleration is no longer used.
+    * Full-surface streaming video uses `gtk4paintablesink` in the existing GTK
+      canvas snapshot, preserving monitor crop, scaling, cursors and composition
+      with sibling widgets. GL/DMA-BUF negotiation avoids the framebuffer copy
+      where supported; screenshots read back only on request. Views of one stream
+      share its paintable, including views added during playback. Removing a view
+      does not stop the decoder-owned pipeline. Streams that cannot use the native
+      sink retain the existing appsink/framebuffer renderer.
     * Wayland keyboard grabs use GDK's native shortcut inhibition. `keyboard-grab`
       follows compositor-confirmed state; pending requests are also released on
       focus loss, hide and teardown, and focused widgets recover after remapping.
@@ -91,6 +95,10 @@ point that test at the desktop clipboard. Run the suite on that private display:
 
 Replace `wayland-test` with the private compositor's actual socket name.
 
+The video regression also requires `SPICE_TEST_DISPLAY` and the GTK 4 GStreamer
+plugin. To exercise only video on a private X11 display, set it to that display's
+name (for example `:1`) and run `meson test -C build test-video-rendering`.
+
 Build dependencies:
 ------------------
 
@@ -109,3 +117,9 @@ The GStreamer backend needs:
 >>>
     gstreamer1-devel gstreamer1-plugins-base-devel gstreamer1-plugins-good gstreamer1-plugins-bad-free
 >>>
+
+Install the GStreamer GTK 4 plugin (`gst-plugin-gtk4` on Arch Linux) and the
+OpenGL plugin (`glsinkbin`) for native video presentation. The GTK 4 plugin must
+be built with the appropriate Wayland/X11 GL and DMA-BUF features for GPU-native
+frames. Missing plugins fall back to the framebuffer renderer; negotiated caps,
+not just the sink name, determine whether frames remain GPU-native.

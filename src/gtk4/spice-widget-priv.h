@@ -18,6 +18,7 @@
 
 #include "config.h"
 #include <math.h>
+#include <gst/gst.h>
 
 #ifdef WIN32
 #include <windows.h>
@@ -79,6 +80,10 @@ struct _SpiceDisplayPrivate {
         bool                    convert;
         cairo_surface_t         *surface;
     } canvas;
+    struct {
+        GstElement          *pipeline;
+        GdkPaintable        *paintable;
+    } video;
     GdkRectangle            area;
     /* window border */
     gint                    ww, wh, mx, my;

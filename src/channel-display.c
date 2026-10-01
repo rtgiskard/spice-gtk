@@ -1525,8 +1525,22 @@ gboolean hand_pipeline_to_widget(display_stream *st, GstPipeline *pipeline)
     if (st->surface->streaming_mode) {
         g_signal_emit(st->channel, signals[SPICE_DISPLAY_OVERLAY], 0,
                       pipeline, &res);
+        if (res || pipeline == NULL)
+            g_object_set_data(G_OBJECT(st->channel), SPICE_DISPLAY_NATIVE_PIPELINE, pipeline);
     }
     return res;
+}
+
+G_GNUC_INTERNAL
+void release_pipeline_from_widget(display_stream *st, GstPipeline *pipeline)
+{
+    /* A replaced decoder must not clear the newer decoder's video. */
+    if (g_object_get_data(G_OBJECT(st->channel), SPICE_DISPLAY_NATIVE_PIPELINE) == pipeline) {
+        g_object_set_data(G_OBJECT(st->channel), SPICE_DISPLAY_NATIVE_PIPELINE, NULL);
+        gboolean handled = FALSE;
+        g_signal_emit(st->channel, signals[SPICE_DISPLAY_OVERLAY], 0,
+                      NULL, &handled);
+    }
 }
 
 /* after a sequence of 3 drops, push a report to the server, even

@@ -363,6 +363,8 @@ static void free_pipeline(SpiceGstDecoder *decoder)
         decoder->bus = NULL;
     }
 
+    release_pipeline_from_widget(decoder->base.stream, GST_PIPELINE(decoder->pipeline));
+
     gst_element_set_state(decoder->pipeline, GST_STATE_NULL);
     gst_object_unref(decoder->appsrc);
     decoder->appsrc = NULL;
@@ -738,10 +740,8 @@ static gboolean create_pipeline(SpiceGstDecoder *decoder, bool try_hw_pipeline)
         }
     }
 
-    /* Passing the pipeline to widget, try to get window handle and
-     * set the GstVideoOverlay interface, setting overlay to the window
-     * will happen only when prepare-window-handle message is received
-     */
+    /* Let the widget supply a GTK-native video sink when it can present this
+     * stream; otherwise retain the framebuffer/appsink path. */
     if (!hand_pipeline_to_widget(decoder->base.stream, GST_PIPELINE(playbin))) {
         sink = gst_element_factory_make("appsink", "sink");
         if (sink == NULL) {
@@ -762,10 +762,7 @@ static gboolean create_pipeline(SpiceGstDecoder *decoder, bool try_hw_pipeline)
 
         decoder->appsink = GST_APP_SINK(sink);
     } else {
-        /* handle has received, it means playbin will render directly into
-         * widget using the gstvideooverlay interface instead of app-sink.
-         */
-        SPICE_DEBUG("Video is presented using gstreamer's GstVideoOverlay interface");
+        SPICE_DEBUG("Video is presented using the widget's native video sink");
 
 #if !GST_CHECK_VERSION(1,14,0)
         /* Avoid using vaapisink if exist since vaapisink could be

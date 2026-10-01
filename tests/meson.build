@@ -73,3 +73,14 @@ clipboard_test = executable('test-gtk-clipboard',
                             dependencies : [spice_client_glib_dep, spice_gtk4_deps])
 test('test-gtk-clipboard', clipboard_test,
      env : ['GSETTINGS_BACKEND=memory', 'GTK_A11Y=none'])
+
+gtk4_test_lib = static_library('gtk4-test-lib',
+                               objects : spice_client_gtk4_lib.extract_all_objects(recursive: true))
+video_rendering_test = executable('test-video-rendering', 'video-rendering.c',
+                                  include_directories : [spice_gtk_include, spice_gtk4_include],
+                                  c_args : spice_gtk4_cflags + ['-DSPICE_COMPILATION'],
+                                  link_with : [gtk4_test_lib, test_lib],
+                                  dependencies : [spice_client_glib_dep, spice_gtk4_deps,
+                                                  spice_gtk4_wayland_deps])
+test('test-video-rendering', video_rendering_test,
+     env : ['GSETTINGS_BACKEND=memory', 'GTK_A11Y=none'])

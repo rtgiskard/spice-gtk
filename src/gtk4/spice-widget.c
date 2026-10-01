@@ -438,6 +438,7 @@ static void draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, 
 static void update_size_request(SpiceDisplay *display);
 static void spice_display_queue_draw(SpiceDisplay *display);
 static GdkDevice *spice_gdk_window_get_pointing_device(GdkSurface *surface);
+static void clear_video(SpiceDisplay *display);
 
 #ifdef HAVE_EGL
 static void complete_pending_draws(SpiceDisplay *display)
@@ -447,6 +448,17 @@ static void complete_pending_draws(SpiceDisplay *display)
         d->dmabuf.pending_draws--;
         spice_display_channel_gl_draw_done(d->display);
     }
+}
+#endif
+
+/* Video is positioned in guest pixels, just like the software primary.
+ * The caller supplies the monitor clip and the widget/screenshot transform. */
+static void snapshot_video(SpiceDisplay *display, GtkSnapshot *snapshot)
+{
+    SpiceDisplayPrivate *d = display->priv;
+
+    gdk_paintable_snapshot(d->video.paintable, GDK_SNAPSHOT(snapshot),
+                           d->canvas.width, d->canvas.height);
 }
 
 
@@ -465,14 +477,16 @@ static void spice_canvas_area_snapshot(GtkWidget *widget, GtkSnapshot *snapshot)
 {
     SpiceDisplay *display = ((SpiceCanvasArea *)widget)->display;
     SpiceDisplayPrivate *d = display->priv;
+#ifdef HAVE_EGL
     GdkTexture *texture = d->dmabuf.scanout_texture;
+#endif
     double surface_scale;
     int x, y, w, h;
     float sx, sy;
     graphene_rect_t clip, bounds;
     static const GdkRGBA black = { 0, 0, 0, 1 };
 
-    if (!dmabuf_enabled(d)) {
+    if (d->video.paintable == NULL && !dmabuf_enabled(d)) {
         GTK_WIDGET_CLASS(spice_canvas_area_parent_class)->snapshot(widget, snapshot);
         return;
     }
@@ -480,8 +494,10 @@ static void spice_canvas_area_snapshot(GtkWidget *widget, GtkSnapshot *snapshot)
     graphene_rect_init(&bounds, 0, 0,
                        gtk_widget_get_width(widget), gtk_widget_get_height(widget));
     gtk_snapshot_append_color(snapshot, &black, &bounds);
-    if (texture == NULL || d->area.width <= 0 || d->area.height <= 0) {
+    if (d->area.width <= 0 || d->area.height <= 0) {
+#ifdef HAVE_EGL
         complete_pending_draws(display);
+#endif
         return;
     }
 
@@ -497,22 +513,35 @@ static void spice_canvas_area_snapshot(GtkWidget *widget, GtkSnapshot *snapshot)
     gtk_snapshot_save(snapshot);
     gtk_snapshot_push_clip(snapshot, &clip);
 
-    if (!d->dmabuf.scanout.y0top) {
-        /* The DMA-BUF starts at the bottom: reverse its vertical axis
-         * without copying the pixels or changing the monitor crop. */
-        gtk_snapshot_scale(snapshot, 1, -1);
-        graphene_rect_init(&bounds, x / surface_scale - d->area.x * sx,
-                           -y / surface_scale -
-                           (gdk_texture_get_height(texture) - d->area.y) * sy,
-                           gdk_texture_get_width(texture) * sx,
-                           gdk_texture_get_height(texture) * sy);
-    } else {
-        graphene_rect_init(&bounds, x / surface_scale - d->area.x * sx,
-                           y / surface_scale - d->area.y * sy,
-                           gdk_texture_get_width(texture) * sx,
-                           gdk_texture_get_height(texture) * sy);
+    if (d->video.paintable != NULL) {
+        graphene_point_t origin = GRAPHENE_POINT_INIT(
+            x / surface_scale - d->area.x * sx,
+            y / surface_scale - d->area.y * sy);
+
+        gtk_snapshot_translate(snapshot, &origin);
+        gtk_snapshot_scale(snapshot, sx, sy);
+        snapshot_video(display, snapshot);
     }
-    gtk_snapshot_append_texture(snapshot, texture, &bounds);
+#ifdef HAVE_EGL
+    else if (texture != NULL) {
+        if (!d->dmabuf.scanout.y0top) {
+            /* The DMA-BUF starts at the bottom: reverse its vertical axis
+             * without copying the pixels or changing the monitor crop. */
+            gtk_snapshot_scale(snapshot, 1, -1);
+            graphene_rect_init(&bounds, x / surface_scale - d->area.x * sx,
+                               -y / surface_scale -
+                               (gdk_texture_get_height(texture) - d->area.y) * sy,
+                               gdk_texture_get_width(texture) * sx,
+                               gdk_texture_get_height(texture) * sy);
+        } else {
+            graphene_rect_init(&bounds, x / surface_scale - d->area.x * sx,
+                               y / surface_scale - d->area.y * sy,
+                               gdk_texture_get_width(texture) * sx,
+                               gdk_texture_get_height(texture) * sy);
+        }
+        gtk_snapshot_append_texture(snapshot, texture, &bounds);
+    }
+#endif
     gtk_snapshot_pop(snapshot);
     gtk_snapshot_restore(snapshot);
     {
@@ -526,7 +555,9 @@ static void spice_canvas_area_snapshot(GtkWidget *widget, GtkSnapshot *snapshot)
         spice_cairo_draw_cursor(display, cr);
         cairo_destroy(cr);
     }
+#ifdef HAVE_EGL
     complete_pending_draws(display);
+#endif
 
 }
 
@@ -538,7 +569,6 @@ static void spice_canvas_area_class_init(SpiceCanvasAreaClass *klass)
 static void spice_canvas_area_init(SpiceCanvasArea *area G_GNUC_UNUSED)
 {
 }
-#endif
 
 /* Event controller callbacks */
 static gboolean key_pressed_cb(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer user_data);
@@ -691,7 +721,7 @@ static void update_ready(SpiceDisplay *display)
         ready = true;
     }
     if (d->monitor_ready) {
-        ready = dmabuf_enabled(d) || d->mark != 0;
+        ready = d->video.paintable != NULL || dmabuf_enabled(d) || d->mark != 0;
     }
     /* If the 'resize-guest' property is set, the application expects spice-gtk
      * to manage the size and state of the displays, so update the 'enabled'
@@ -894,6 +924,7 @@ static void spice_display_dispose(GObject *obj)
         d->mouse_have_pointer = FALSE;
         spice_gtk_session_set_mouse_has_pointer(d->gtk_session, FALSE);
     }
+    clear_video(display);
     spice_cairo_image_destroy(display);
 #ifdef HAVE_EGL
     complete_pending_draws(display);
@@ -1037,11 +1068,9 @@ static void spice_display_init(SpiceDisplay *display)
     gtk_box_append(GTK_BOX(display), GTK_WIDGET(d->stack));
 #ifdef HAVE_EGL
     d->dmabuf.scanout.fd[0] = -1;
+#endif
     area = g_object_new(spice_canvas_area_get_type(), NULL);
     ((SpiceCanvasArea *)area)->display = display;
-#else
-    area = gtk_drawing_area_new();
-#endif
 
     g_signal_connect(area, "resize", G_CALLBACK(drawing_area_resized), display);
     gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(area), draw_func, display, NULL);
@@ -1838,6 +1867,9 @@ static gboolean do_color_convert(SpiceDisplay *display, GdkRectangle *r)
 static void set_dmabuf_enabled(SpiceDisplay *display, bool enabled)
 {
     SpiceDisplayPrivate *d = display->priv;
+
+    if (enabled)
+        clear_video(display);
 
     /* Keep the native renderer visible when switching framebuffer modes. */
     if (enabled || dmabuf_enabled(d) != enabled)
@@ -3286,6 +3318,7 @@ static void primary_create(SpiceChannel *channel, gint format,
     SpiceDisplay *display = data;
     SpiceDisplayPrivate *d = display->priv;
 
+    clear_video(display);
     d->canvas.format = format;
     d->canvas.stride = stride;
     d->canvas.width = width;
@@ -3300,6 +3333,7 @@ static void primary_destroy(SpiceDisplayChannel *channel, gpointer data)
     SpiceDisplay *display = SPICE_DISPLAY(data);
     SpiceDisplayPrivate *d = display->priv;
 
+    clear_video(display);
     spice_cairo_image_destroy(display);
     d->canvas.width  = 0;
     d->canvas.height = 0;
@@ -3307,6 +3341,7 @@ static void primary_destroy(SpiceDisplayChannel *channel, gpointer data)
     d->canvas.data = NULL;
     d->canvas.data_origin = NULL;
     set_monitor_ready(display, false);
+    spice_display_queue_draw(display);
 }
 
 static void spice_display_queue_draw(SpiceDisplay *display)
@@ -3322,19 +3357,121 @@ static void spice_display_queue_draw(SpiceDisplay *display)
         gtk_widget_queue_draw(GTK_WIDGET(display));
 }
 
-static gboolean set_overlay(SpiceChannel *channel, void* pipeline_ptr, SpiceDisplay *display)
+static void video_invalidate_contents(GdkPaintable *paintable G_GNUC_UNUSED,
+                                      SpiceDisplay *display)
+{
+    spice_display_queue_draw(display);
+}
+
+static void video_invalidate_size(GdkPaintable *paintable G_GNUC_UNUSED,
+                                  SpiceDisplay *display)
+{
+    /* The primary, rather than codec pixel aspect ratio, defines guest size. */
+    update_size_request(display);
+    spice_display_queue_draw(display);
+}
+
+static void clear_video(SpiceDisplay *display)
 {
     SpiceDisplayPrivate *d = display->priv;
 
-    if (pipeline_ptr == NULL) {
-        gtk_stack_set_visible_child_name(d->stack, "draw-area");
-        return true;
+    if (d->video.paintable != NULL) {
+        g_signal_handlers_disconnect_by_data(d->video.paintable, display);
+        g_clear_object(&d->video.paintable);
+    }
+    /* Only the decoder may stop its pipeline: other views and incoming
+     * encoded frames can outlive this widget's attachment. */
+    gst_clear_object(&d->video.pipeline);
+}
+
+static gboolean set_overlay(SpiceChannel *channel G_GNUC_UNUSED,
+                             void *pipeline_ptr, SpiceDisplay *display)
+{
+    SpiceDisplayPrivate *d = display->priv;
+    static const char paintable_key[] = "spice-gtk4-video-paintable";
+    GstElement *pipeline = pipeline_ptr;
+    GstElement *sink, *glsink;
+    GdkPaintable *paintable = NULL;
+    GdkGLContext *context = NULL;
+    GParamSpec *prop;
+
+    if (pipeline == d->video.pipeline && pipeline != NULL)
+        return TRUE;
+
+    clear_video(display);
+    gtk_stack_set_visible_child_name(d->stack, "draw-area");
+    spice_display_queue_draw(display);
+    update_ready(display);
+    if (pipeline == NULL)
+        return TRUE;
+
+    /* The decoder's explicit hardware/appsink pipeline has no video-sink
+     * property. Only playbin can accept a replacement presentation sink. */
+    prop = g_object_class_find_property(G_OBJECT_GET_CLASS(pipeline), "video-sink");
+    if (prop == NULL || !(prop->flags & G_PARAM_WRITABLE) ||
+        d->canvas.width <= 0 || d->canvas.height <= 0)
+        return FALSE;
+
+    /* Every handler of the channel's handoff must use the same sink. Keep
+     * the paintable with its pipeline, not with whichever view arrived first. */
+    paintable = g_object_get_data(G_OBJECT(pipeline), paintable_key);
+    if (paintable != NULL) {
+        g_object_ref(paintable);
+        goto attach;
     }
 
-    /* GTK4 widgets share their enclosing native surface. An external overlay
-     * cannot participate in GTK clipping, movement or retained snapshots;
-     * let the decoder use its existing appsink/framebuffer path instead. */
-    return false;
+    sink = gst_element_factory_make("gtk4paintablesink", NULL);
+    if (sink == NULL)
+        return FALSE;
+    gst_object_ref_sink(sink);
+    g_object_get(sink, "paintable", &paintable, NULL);
+    if (paintable == NULL)
+        goto fail;
+
+    /* Match the GTK sink's own GL context, allowing upload/conversion and
+     * direct GL/DMABuf negotiation without a CPU framebuffer round trip. */
+    g_object_get(paintable, "gl-context", &context, NULL);
+    if (context != NULL) {
+        g_object_unref(context);
+        glsink = gst_element_factory_make("glsinkbin", NULL);
+        if (glsink == NULL)
+            goto fail;
+        gst_object_ref_sink(glsink);
+        g_object_set(glsink, "sink", sink, NULL);
+        gst_object_unref(sink);
+        sink = glsink;
+    }
+
+    /* Guest pixels define the aspect ratio; widget scaling adds letterboxing. */
+    g_object_set(paintable, "force-aspect-ratio", FALSE, NULL);
+    if (gst_element_set_state(sink, GST_STATE_READY) == GST_STATE_CHANGE_FAILURE)
+        goto fail;
+    gst_element_set_state(sink, GST_STATE_NULL);
+    g_object_set(pipeline, "video-sink", sink, NULL);
+    gst_object_unref(sink);
+    g_object_set_data_full(G_OBJECT(pipeline), paintable_key,
+                           g_object_ref(paintable), g_object_unref);
+
+attach:
+    d->video.pipeline = gst_object_ref(pipeline);
+    d->video.paintable = paintable;
+    g_signal_connect(paintable, "invalidate-contents",
+                     G_CALLBACK(video_invalidate_contents), display);
+    g_signal_connect(paintable, "invalidate-size",
+                     G_CALLBACK(video_invalidate_size), display);
+#ifdef HAVE_EGL
+    complete_pending_draws(display);
+    set_dmabuf_enabled(display, false);
+#endif
+    spice_display_widget_update_monitor_area(display);
+    spice_display_queue_draw(display);
+    return TRUE;
+
+fail:
+    gst_element_set_state(sink, GST_STATE_NULL);
+    gst_object_unref(sink);
+    g_clear_object(&paintable);
+    return FALSE;
 }
 
 static void invalidate(SpiceChannel *channel,
@@ -3349,6 +3486,11 @@ static void invalidate(SpiceChannel *channel,
         .height = h
     };
 
+    if (d->video.paintable != NULL) {
+        clear_video(display);
+        update_ready(display);
+        spice_display_queue_draw(display);
+    }
 #ifdef HAVE_EGL
     set_dmabuf_enabled(display, false);
 #endif
@@ -3779,6 +3921,9 @@ static void channel_new(SpiceSession *s, SpiceChannel *channel, SpiceDisplay *di
         spice_g_signal_connect_object(channel, "gl-draw",
                                       G_CALLBACK(gl_draw), display, G_CONNECT_SWAPPED);
 #endif
+        GstPipeline *pipeline = g_object_get_data(G_OBJECT(channel), SPICE_DISPLAY_NATIVE_PIPELINE);
+        if (pipeline != NULL)
+            set_overlay(channel, pipeline, display);
 
         spice_channel_connect(channel);
         return;
@@ -3938,13 +4083,65 @@ void spice_display_mouse_ungrab(SpiceDisplay *display)
     try_mouse_ungrab(display);
 }
 
+static GdkPixbuf *video_get_pixbuf(SpiceDisplay *display)
+{
+    SpiceDisplayPrivate *d = display->priv;
+    GtkNative *native = gtk_widget_get_native(GTK_WIDGET(display));
+    GskRenderer *renderer;
+    GtkSnapshot *snapshot;
+    GskRenderNode *node;
+    GdkTexture *texture;
+    GdkTextureDownloader *downloader;
+    GBytes *bytes;
+    GdkPixbuf *pixbuf;
+    gsize stride;
+    graphene_rect_t viewport;
+    graphene_point_t origin = GRAPHENE_POINT_INIT(-d->area.x, -d->area.y);
+
+    /* Never substitute the stale software primary for a native video frame. */
+    if (native == NULL || d->area.width <= 0 || d->area.height <= 0 ||
+        gdk_paintable_get_intrinsic_width(d->video.paintable) <= 0 ||
+        gdk_paintable_get_intrinsic_height(d->video.paintable) <= 0)
+        return NULL;
+    renderer = gtk_native_get_renderer(native);
+    if (renderer == NULL)
+        return NULL;
+
+    graphene_rect_init(&viewport, 0, 0, d->area.width, d->area.height);
+    snapshot = gtk_snapshot_new();
+    gtk_snapshot_push_clip(snapshot, &viewport);
+    gtk_snapshot_translate(snapshot, &origin);
+    snapshot_video(display, snapshot);
+    gtk_snapshot_pop(snapshot);
+    node = gtk_snapshot_free_to_node(snapshot);
+    if (node == NULL)
+        return NULL;
+    texture = gsk_renderer_render_texture(renderer, node, &viewport);
+    gsk_render_node_unref(node);
+    if (texture == NULL)
+        return NULL;
+
+    /* Read back only on an explicit screenshot, at guest/monitor resolution. */
+    downloader = gdk_texture_downloader_new(texture);
+    gdk_texture_downloader_set_format(downloader, GDK_MEMORY_R8G8B8A8);
+    bytes = gdk_texture_downloader_download_bytes(downloader, &stride);
+    gdk_texture_downloader_free(downloader);
+    pixbuf = gdk_pixbuf_new_from_bytes(bytes, GDK_COLORSPACE_RGB, TRUE, 8,
+                                      d->area.width, d->area.height, stride);
+    g_bytes_unref(bytes);
+    g_object_unref(texture);
+    return pixbuf;
+}
+
 /**
  * spice_display_get_pixbuf:
  * @display: a #SpiceDisplay
  *
- * Take a screenshot of the display.
+ * Take a screenshot of the display at guest resolution, cropped to the
+ * selected monitor. Native video requires a realized display and a decoded
+ * frame; until then this returns %NULL rather than the software framebuffer.
  *
- * Returns: (transfer full): a #GdkPixbuf with the screenshot image buffer
+ * Returns: (transfer full) (nullable): a #GdkPixbuf with the screenshot image buffer
  **/
 GdkPixbuf *spice_display_get_pixbuf(SpiceDisplay *display)
 {
@@ -3958,6 +4155,9 @@ GdkPixbuf *spice_display_get_pixbuf(SpiceDisplay *display)
 
     g_return_val_if_fail(d != NULL, NULL);
     g_return_val_if_fail(d->display != NULL, NULL);
+
+    if (d->video.paintable != NULL)
+        return video_get_pixbuf(display);
 
 #ifdef HAVE_EGL
     if (dmabuf_enabled(d)) {
