@@ -2261,7 +2261,7 @@ gchar *spice_channel_supported_string(void)
  *
  * Create a new #SpiceChannel of type @type, and channel ID @id.
  *
- * Returns: a weak reference to #SpiceChannel, the session owns the reference
+ * Returns: (transfer none) (nullable): a borrowed #SpiceChannel; the session owns its reference
  **/
 SpiceChannel *spice_channel_new(SpiceSession *s, int type, int id)
 {
